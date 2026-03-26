@@ -1,0 +1,11 @@
+Mobility reduction is an effective strategy to control infectious disease spread.
+WHO recommends reducing public movement when case growth exceeds 5%.
+
+Vaccination helps reduce transmission and severity of disease.
+Higher vaccination coverage leads to lower outbreak intensity.
+
+Testing and isolation of infected individuals is critical for outbreak control.
+Early detection prevents exponential spread.
+
+Lockdowns and restrictions are used when transmission becomes uncontrolled.
+Targeted restrictions are preferred over full lockdowns.

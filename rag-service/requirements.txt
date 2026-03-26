@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 langchain
-langchain-openai
-pinecone-client
+python-dotenv
+langchain-google-genai
+pinecone
 pypdf
+sentence_transformers
