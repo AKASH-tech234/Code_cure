@@ -1,9 +1,10 @@
 # 🧠 Epidemic Intelligence System — Track C Implementation Plan
+
 > **CODECURE AI Hackathon | Corrected Architecture + Micro-Step Execution Guide**
 > **5-Day Build Plan | Small Team Optimized**
 
-
 ### ✅ Corrected Architecture (Component-Precise)
+
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        FRONTEND (React)                                │
@@ -12,38 +13,85 @@
                           │ HTTP / WebSocket
 ┌─────────────────────────▼──────────────────────────────────────────────┐
 │                   BACKEND (Node.js + Express)                          │
-│   API Gateway │ Session Manager │ Redis Cache │ Agent Orchestrator      │
-│                    (calls LangGraph agent via Python bridge)           │
+│   API Gateway │ Session Manager │ Redis Cache                          │
+│                                                                          │
+│   Route Map:                                                             │
+│   /predict   → ML Service                                                │
+│   /explain   → ML Service                                                │
+│   /simulate  → ML Service                                                │
+│   /insights  → Lightweight LLM                                           │
+│   /chat      → Agent Service                                             │
 └──────┬──────────────────────────────────────────┬───────────────────────┘
        │ REST                                      │ REST
 ┌──────▼──────────────┐               ┌───────────▼────────────────────┐
-│  ML MICROSERVICE    │               │    RAG SERVICE (Python/FastAPI) │
-│  Python + FastAPI   │               │    Pinecone + LangChain Embed   │
-│  XGBoost + SHAP     │               │    WHO/CDC/Mobility Docs        │
-│  /predict           │               │    /retrieve                   │
-│  /explain           │               └────────────────────────────────┘
+│  ML MICROSERVICE    │               │  LIGHTWEIGHT INSIGHTS SERVICE   │
+│  Python + FastAPI   │               │  Summary Generation             │
+│  XGBoost + SHAP     │               │  /insights                      │
+│  /predict           │               └────────────────────────────────┘
+│  /explain           │
 │  /simulate          │
 └──────┬──────────────┘
        │
 ┌──────▼──────────────────────────────────────────────────────────────────┐
-│                    AGENT LAYER (Python — LangGraph)                     │
-│   Input Parser → Planner → Tool Executor → Memory Node → Synthesizer   │
-│   Tools: forecast_tool | explain_tool | simulate_tool | rag_tool        │
-└──────┬──────────────────────────────────────────────────────────────────┘
-       │
-┌──────▼─────────────────────────────┐
-│        DATA LAYER                  │
-│  processed_data.csv / SQLite       │
-│  Johns Hopkins + OWID + Mobility   │
-│  Feature Store (precomputed)       │
-└────────────────────────────────────┘
+│                    AGENT SERVICE (Python — LangGraph)                   │
+│   Chat-only reasoning path (/chat)                                      │
+│   Input Parser → Planner → Tool Executor → Memory Node → Synthesizer    │
+│   Agent may call: ML Service + RAG Service                              │
+└──────┬───────────────────────────────────────────────┬──────────────────┘
+       │ REST                                          │ REST
+┌──────▼──────────────────────────┐        ┌───────────▼───────────────────┐
+│  ML SERVICE (internal reuse)    │        │  RAG SERVICE (Python/FastAPI) │
+│  Used by Agent for deep chat    │        │  Pinecone + LangChain Embed   │
+└─────────────────────────────────┘        │  WHO/CDC/Mobility Docs        │
+                                           │  /retrieve                    │
+                                           └───────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                           DATA LAYER                                   │
+│  processed_data.csv / SQLite │ Johns Hopkins + OWID + Mobility         │
+│  Feature Store (precomputed)                                           │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key corrections from original:**
-- Agent layer is **separate from Node.js**, not inside it. Node.js calls the agent via HTTP.
-- RAG service is **its own FastAPI microservice**, not bundled with ML service.
-- Redis sits **inside Node.js layer** (not a standalone box), caching API responses before they hit ML/RAG.
-- LangGraph agent **calls** both ML and RAG services — it is the orchestrator, not Node.js.
+
+- Real-time analytics routes (`/predict`, `/explain`, `/simulate`) go **directly to ML service**.
+- Agent is used **only for `/chat` and deep reasoning**.
+- `/insights` is a **new lightweight summary layer** for fast UI-facing explanations.
+- RAG remains a separate service, but is used **only inside the agent flow** (not UI updates).
+
+---
+
+## 🧩 User Interaction Flow (Updated)
+
+1. Region click → Backend calls ML directly (`/predict`, `/explain`)
+2. Slider change → Backend calls ML `/simulate`
+3. Insights panel → Backend calls lightweight `/insights`
+4. Chat query → Backend calls Agent (`/chat`), which can combine ML + RAG
+
+---
+
+## 🧠 Insights Layer (NEW)
+
+- Purpose: quick summaries and slider-impact explanations
+- Input: forecast, shap, simulation
+- Output: short bullet insights
+- RAG usage: none (RAG is not called from insights)
+
+---
+
+## 🤖 Agent Role (Updated)
+
+Agent is now responsible only for:
+
+- Chat-based reasoning
+- Combining ML + RAG during deep analysis
+
+Agent is not used for:
+
+- UI updates
+- Slider interactions
+- Basic summary generation
 
 ---
 
@@ -80,19 +128,21 @@ epidemic-intelligence/
 │   │   │   ├── predict.js           # POST /api/predict → checks Redis → calls ML service
 │   │   │   ├── chat.js              # POST /api/chat → calls agent service
 │   │   │   ├── explain.js           # POST /api/explain → checks Redis → calls ML service
-│   │   │   └── simulate.js          # POST /api/simulate → calls ML service (no cache)
+│   │   │   ├── simulate.js          # POST /api/simulate → calls ML service (no cache)
+│   │   │   └── insights.js          # POST /api/insights → lightweight LLM summaries
 │   │   ├── middleware/
 │   │   │   ├── cache.js             # Redis get/set middleware
 │   │   │   └── errorHandler.js
 │   │   ├── services/
 │   │   │   ├── mlService.js         # Axios calls to FastAPI ML (port 8001)
 │   │   │   ├── agentService.js      # Axios calls to agent FastAPI (port 8002)
-│   │   │   └── ragService.js        # Axios calls to RAG FastAPI (port 8003)
+│   │   │   ├── insightsService.js   # Axios calls to lightweight insights service
+│   │   │   └── ragService.js        # Used by agent path; not used for UI routes
 │   │   ├── utils/
 │   │   │   └── redis.js             # Redis client + helper functions
 │   │   └── index.js                 # Express app entry, route mounting
 │   ├── package.json
-│   └── .env                         # ML_URL, AGENT_URL, RAG_URL, REDIS_URL
+│   └── .env                         # ML_URL, AGENT_URL, RAG_URL, INSIGHTS_URL, REDIS_URL
 │
 ├── ml-service/                 # FastAPI — XGBoost + SHAP
 │   ├── app/
@@ -163,20 +213,22 @@ class AgentState(TypedDict):
     # INPUT
     user_query: str                    # Raw user question
     region: Optional[str]              # Extracted region (e.g. "Italy")
-    
+  mode: str                          # "chat" | "summary"
+  context: Optional[Dict]            # Optional precomputed ML data from backend
+
     # PLANNING
     plan: List[str]                    # Ordered list of tool names to call
     current_step: int                  # Which step in plan we're at
-    
+
     # TOOL OUTPUTS
     forecast_result: Optional[Dict]    # From forecast_tool
     explain_result: Optional[Dict]     # From explain_tool
     simulate_result: Optional[Dict]    # From simulate_tool
     rag_context: Optional[str]         # Retrieved document chunks (raw text)
-    
+
     # MEMORY
     conversation_history: List[Dict]   # [{role, content}, ...]
-    
+
     # OUTPUT
     final_answer: Optional[str]        # LLM-synthesized response
     error: Optional[str]               # Any error message
@@ -197,7 +249,7 @@ def input_parser_node(state: AgentState) -> AgentState:
     Extract from this query:
     1. Region/country mentioned (or "global")
     2. Primary intent: forecast | explain | simulate | general_info
-    
+
     Query: {state["user_query"]}
     Respond in JSON: {{"region": "...", "intent": "..."}}
     """
@@ -231,13 +283,22 @@ def planner_node(state: AgentState) -> AgentState:
 def tool_executor_node(state: AgentState) -> AgentState:
     """
     Executes ONE tool from the plan at current_step.
-    Calls the appropriate tool function and stores result in state.
+    Reuses provided context when available; otherwise calls tool function.
     """
     tool_name = state["plan"][state["current_step"]]
     tool_fn = TOOL_REGISTRY[tool_name]
-    
-    result = tool_fn(region=state["region"], state=state)
-    
+
+    context_key_map = {
+        "forecast": "forecast_result",
+        "explain":  "explain_result",
+        "simulate": "simulate_result",
+    }
+
+    if state.get("context") and tool_name in context_key_map:
+        result = state["context"].get(context_key_map[tool_name])
+    else:
+        result = tool_fn(region=state["region"], state=state)
+
     # Store result in the right state key
     result_key_map = {
         "forecast": "forecast_result",
@@ -269,7 +330,7 @@ def synthesizer_node(state: AgentState) -> AgentState:
     to produce a final, scientifically grounded answer.
     """
     context_parts = []
-    
+
     if state.get("forecast_result"):
         f = state["forecast_result"]
         context_parts.append(
@@ -277,7 +338,7 @@ def synthesizer_node(state: AgentState) -> AgentState:
             f"7-day predicted cases: {f['forecast']}\n"
             f"Risk level: {f['risk_level']}"
         )
-    
+
     if state.get("explain_result"):
         e = state["explain_result"]
         context_parts.append(
@@ -285,34 +346,39 @@ def synthesizer_node(state: AgentState) -> AgentState:
             f"Increasing risk: {e['top_positive']}\n"
             f"Decreasing risk: {e['top_negative']}"
         )
-    
+
     if state.get("rag_context"):
         context_parts.append(
             f"RELEVANT PUBLIC HEALTH GUIDELINES:\n{state['rag_context']}"
         )
-    
+
     system_prompt = """You are an epidemic intelligence analyst.
-    Use ONLY the provided data to answer. 
+    Use ONLY the provided data to answer.
     Structure your answer as:
     1. Current situation summary
     2. Why this is happening (cite SHAP drivers)
     3. What the evidence says (cite guidelines)
     4. Recommended actions
     Never fabricate statistics."""
-    
+
     user_message = (
         f"Question: {state['user_query']}\n\n"
         f"Data:\n" + "\n\n".join(context_parts)
     )
-    
+
     response = llm.invoke([
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_message)
     ])
-    
+
     state["final_answer"] = response.content
     return state
 ```
+
+### RAG Usage Policy (Updated)
+
+- RAG is used only inside agent chat/reasoning flow.
+- RAG is not used for region-click UI updates, slider simulations, or `/insights` summaries.
 
 ### Graph Edges (Routing Logic)
 
@@ -333,22 +399,22 @@ from langgraph.graph import StateGraph, END
 
 def build_agent_graph():
     graph = StateGraph(AgentState)
-    
+
     # Add nodes
     graph.add_node("input_parser",    input_parser_node)
     graph.add_node("memory_manager",  memory_manager_node)
     graph.add_node("planner",         planner_node)
     graph.add_node("tool_executor",   tool_executor_node)
     graph.add_node("synthesizer",     synthesizer_node)
-    
+
     # Entry point
     graph.set_entry_point("input_parser")
-    
+
     # Edges
     graph.add_edge("input_parser",   "memory_manager")
     graph.add_edge("memory_manager", "planner")
     graph.add_edge("planner",        "tool_executor")
-    
+
     # Conditional: loop tools or go to synthesizer
     graph.add_conditional_edges(
         "tool_executor",
@@ -358,9 +424,9 @@ def build_agent_graph():
             "synthesize":  "synthesizer",
         }
     )
-    
+
     graph.add_edge("synthesizer", END)
-    
+
     return graph.compile()
 ```
 
@@ -553,7 +619,7 @@ def load_jhu_data() -> pd.DataFrame:
     """
     url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
     df = pd.read_csv(url)
-    
+
     # Melt wide format (one col per date) → long format (date column)
     id_cols = ["Province/State", "Country/Region", "Lat", "Long"]
     df = df.melt(id_vars=id_cols, var_name="date", value_name="confirmed_cases")
@@ -605,14 +671,14 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     (after merging with OWID and mobility)
     """
     df = df.sort_values(["region", "date"])
-    
+
     # ── Lag Features ─────────────────────────────────────────────────
     # Converts time-series to tabular by shifting target back N days.
     # XGBoost sees: "given cases at T-1, T-7, predict cases at T+7"
     df["lag_1"]  = df.groupby("region")["confirmed_cases"].shift(1)
     df["lag_7"]  = df.groupby("region")["confirmed_cases"].shift(7)
     df["lag_14"] = df.groupby("region")["confirmed_cases"].shift(14)
-    
+
     # ── Rolling Statistics ────────────────────────────────────────────
     df["rolling_mean_7"]  = (
         df.groupby("region")["confirmed_cases"]
@@ -622,23 +688,23 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         df.groupby("region")["confirmed_cases"]
           .transform(lambda x: x.shift(1).rolling(7).std())
     )
-    
+
     # ── Growth Rate ───────────────────────────────────────────────────
     # growth_rate = (cases_t - cases_{t-7}) / (cases_{t-7} + 1)
     df["growth_rate_7d"] = (
         (df["confirmed_cases"] - df["lag_7"]) / (df["lag_7"] + 1)
     )
-    
+
     # ── Epidemiological Features ──────────────────────────────────────
     # cases_per_100k requires population lookup (hardcoded dict or merge)
     POPULATION = {"Italy": 60_000_000, "India": 1_400_000_000, ...}
     df["population"] = df["region"].map(POPULATION)
     df["cases_per_100k"] = df["confirmed_cases"] / (df["population"] / 100_000)
-    
+
     # ── Target Variable ───────────────────────────────────────────────
     # Predict cases 7 days ahead (shift back by -7)
     df["target_cases_7d"] = df.groupby("region")["confirmed_cases"].shift(-7)
-    
+
     # ── Risk Label (for classifier) ───────────────────────────────────
     # High:   growth_rate > 0.10 (10% weekly increase)
     # Medium: growth_rate 0.02–0.10
@@ -648,10 +714,10 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         elif row["growth_rate_7d"] > 0.02: return "Medium"
         else: return "Low"
     df["risk_label"] = df.apply(label_risk, axis=1)
-    
+
     # Drop rows with NaN targets (future or lag gaps)
     df = df.dropna(subset=["target_cases_7d", "lag_7", "rolling_mean_7"])
-    
+
     return df
 
 FEATURE_COLS = [
@@ -679,14 +745,14 @@ import shap, pickle
 def train_and_save():
     # 1. Load processed features
     df = pd.read_csv("data/processed/features.csv")
-    
+
     X = df[FEATURE_COLS]
     y_reg = df["target_cases_7d"]
     y_cls = df["risk_label"]
-    
+
     # 2. Time-series split (NEVER random split — data leakage!)
     tscv = TimeSeriesSplit(n_splits=5)
-    
+
     # 3. Train regressor
     reg_params = {
         "n_estimators": 300,
@@ -702,7 +768,7 @@ def train_and_save():
     model_reg.fit(X, y_reg)
     rmse = np.sqrt(mean_squared_error(y_reg, model_reg.predict(X)))
     print(f"Train RMSE: {rmse:.2f}")
-    
+
     # 4. Train classifier
     model_cls = xgb.XGBClassifier(
         n_estimators=200, max_depth=4, use_label_encoder=False,
@@ -711,10 +777,10 @@ def train_and_save():
     from sklearn.preprocessing import LabelEncoder
     le = LabelEncoder()
     model_cls.fit(X, le.fit_transform(y_cls))
-    
+
     # 5. SHAP explainer (TreeExplainer is fast for XGBoost)
     explainer = shap.TreeExplainer(model_reg)
-    
+
     # 6. Save artifacts
     with open("models/xgb_forecast.pkl", "wb") as f:
         pickle.dump(model_reg, f)
@@ -722,7 +788,7 @@ def train_and_save():
         pickle.dump({"model": model_cls, "encoder": le}, f)
     with open("models/shap_explainer.pkl", "wb") as f:
         pickle.dump(explainer, f)
-    
+
     print("✅ Models saved.")
 ```
 
@@ -757,14 +823,14 @@ router = APIRouter()
 def predict_endpoint(body: PredictRequest, request: Request):
     model   = request.app.state.model_reg
     df      = request.app.state.features
-    
+
     region_df = df[df["region"] == body.region].sort_values("date")
     if region_df.empty:
         raise HTTPException(404, f"Region '{body.region}' not found")
-    
+
     latest = region_df.iloc[-1]
     X_input = latest[FEATURE_COLS].values.reshape(1, -1)
-    
+
     # Predict next 7 days by recursive 1-step forecasting
     forecasts = []
     current_row = latest.copy()
@@ -777,12 +843,12 @@ def predict_endpoint(body: PredictRequest, request: Request):
         current_row["lag_7"]  = current_row["lag_1"]
         current_row["lag_1"]  = pred
         current_row["rolling_mean_7"] = np.mean(forecasts[-7:]) if len(forecasts) >= 7 else np.mean(forecasts)
-    
+
     # Risk classification on current features
     cls_model = request.app.state.model_cls
     risk_encoded = cls_model["model"].predict(X_input)[0]
     risk_label   = cls_model["encoder"].inverse_transform([risk_encoded])[0]
-    
+
     return PredictResponse(
         region=body.region,
         forecast=forecasts,
@@ -864,10 +930,10 @@ def chunk_document(text: str, metadata: dict) -> list:
 
 def ingest_all():
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")  # 1536-dim, cheap
-    
+
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
     index_name = "epidemic-rag"
-    
+
     # Create index if not exists
     if index_name not in [i.name for i in pc.list_indexes()]:
         pc.create_index(
@@ -876,9 +942,9 @@ def ingest_all():
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region="us-east-1")
         )
-    
+
     index = pc.Index(index_name)
-    
+
     for source in DOCUMENT_SOURCES:
         text = extract_text(source)  # PDF or URL fetch
         chunks = chunk_document(text, {
@@ -886,19 +952,19 @@ def ingest_all():
             "source_type": source.get("type"),
             "doc_name":    source.get("path", source.get("url", ""))[:80]
         })
-        
+
         # Batch embed (Pinecone limit: 100 vectors per upsert)
         for batch_start in range(0, len(chunks), 100):
             batch = chunks[batch_start:batch_start + 100]
             texts  = [c["text"] for c in batch]
             embeds = embeddings.embed_documents(texts)
-            
+
             vectors = [
                 (c["id"], embed, c["metadata"])
                 for c, embed in zip(batch, embeds)
             ]
             index.upsert(vectors=vectors)
-        
+
         print(f"✅ Ingested: {source.get('source')} — {len(chunks)} chunks")
 ```
 
@@ -933,22 +999,22 @@ router = APIRouter()
 def retrieve(body: RetrieveRequest):
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     query_vec  = embeddings.embed_query(body.query)
-    
+
     pc    = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
     index = pc.Index("epidemic-rag")
-    
+
     # Metadata filter: only retrieve from authoritative sources
     filter_dict = {}
     if body.filter:
         filter_dict = {"source_type": {"$in": body.filter.get("source_type", [])}}
-    
+
     results = index.query(
         vector=query_vec,
         top_k=body.top_k,          # default 4
         include_metadata=True,
         filter=filter_dict or None
     )
-    
+
     # Format output: "[SOURCE, doc_name]: chunk_text"
     context_parts = []
     for match in results["matches"]:
@@ -957,7 +1023,7 @@ def retrieve(body: RetrieveRequest):
         context_parts.append(
             f"[{meta['source']}, {meta['doc_name'][:40]}]: {chunk}"
         )
-    
+
     return RetrieveResponse(
         context="\n\n".join(context_parts),
         num_chunks=len(context_parts),
@@ -988,46 +1054,46 @@ npm run dev     # uses nodemon
 
 ```javascript
 // backend/src/index.js
-const express = require('express');
-const cors    = require('cors');
-const app     = express();
+const express = require("express");
+const cors = require("cors");
+const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/predict',  require('./routes/predict'));
-app.use('/api/explain',  require('./routes/explain'));
-app.use('/api/simulate', require('./routes/simulate'));
-app.use('/api/chat',     require('./routes/chat'));
+app.use("/api/predict", require("./routes/predict"));
+app.use("/api/explain", require("./routes/explain"));
+app.use("/api/simulate", require("./routes/simulate"));
+app.use("/api/chat", require("./routes/chat"));
 
-app.listen(3001, () => console.log('Backend running on :3001'));
+app.listen(3001, () => console.log("Backend running on :3001"));
 
 // backend/src/routes/predict.js
-const router    = require('express').Router();
-const { getCache, setCache } = require('../utils/redis');
-const mlService = require('../services/mlService');
+const router = require("express").Router();
+const { getCache, setCache } = require("../utils/redis");
+const mlService = require("../services/mlService");
 
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   const { region, days = 7 } = req.body;
   const cacheKey = `predict:${region}:${days}`;
-  
+
   // 1. Check Redis cache (TTL: 1 hour — data doesn't change that fast)
   const cached = await getCache(cacheKey);
   if (cached) return res.json({ ...cached, cached: true });
-  
+
   // 2. Call ML service
   const result = await mlService.predict({ region, days });
-  
+
   // 3. Cache result
   await setCache(cacheKey, result, 3600);
-  
+
   res.json(result);
 });
 
 module.exports = router;
 
 // backend/src/utils/redis.js
-const redis = require('redis');
+const redis = require("redis");
 const client = redis.createClient({ url: process.env.REDIS_URL });
 client.connect();
 
@@ -1045,12 +1111,12 @@ module.exports = { getCache, setCache };
 
 ### Redis Caching Strategy
 
-| Route | Cache Key | TTL | Notes |
-|---|---|---|---|
-| `/predict` | `predict:{region}:{days}` | 1 hour | Data refreshes daily |
-| `/explain` | `explain:{region}` | 1 hour | SHAP values stable |
-| `/simulate` | ❌ No cache | — | User-specific params |
-| `/chat` | ❌ No cache | — | Always fresh reasoning |
+| Route       | Cache Key                 | TTL    | Notes                  |
+| ----------- | ------------------------- | ------ | ---------------------- |
+| `/predict`  | `predict:{region}:{days}` | 1 hour | Data refreshes daily   |
+| `/explain`  | `explain:{region}`        | 1 hour | SHAP values stable     |
+| `/simulate` | ❌ No cache               | —      | User-specific params   |
+| `/chat`     | ❌ No cache               | —      | Always fresh reasoning |
 
 ---
 
@@ -1082,39 +1148,48 @@ App.jsx
 
 ```jsx
 // frontend/src/hooks/useForecast.js
-import { useQuery } from '@tanstack/react-query';
-import api from '../api/client';
+import { useQuery } from "@tanstack/react-query";
+import api from "../api/client";
 
 export function useForecast(region) {
   return useQuery({
-    queryKey: ['forecast', region],
-    queryFn: () => api.post('/predict', { region, days: 7 }).then(r => r.data),
+    queryKey: ["forecast", region],
+    queryFn: () =>
+      api.post("/predict", { region, days: 7 }).then((r) => r.data),
     enabled: !!region,
-    staleTime: 1000 * 60 * 30,  // 30 min — matches Redis TTL
+    staleTime: 1000 * 60 * 30, // 30 min — matches Redis TTL
   });
 }
 
 // frontend/src/components/ChatUI.jsx
 function ChatUI() {
   const [messages, setMessages] = useState([]);
-  const [input, setInput]       = useState('');
-  
+  const [input, setInput] = useState("");
+
   async function send() {
-    const userMsg = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    
-    const res = await api.post('/chat', { message: input });
-    setMessages(prev => [...prev, { role: 'assistant', content: res.data.answer }]);
+    const userMsg = { role: "user", content: input };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput("");
+
+    const res = await api.post("/chat", { message: input });
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: res.data.answer },
+    ]);
   }
-  
+
   return (
     <div className="chat-container">
       <div className="messages">
-        {messages.map((m, i) => <ChatMessage key={i} {...m} />)}
+        {messages.map((m, i) => (
+          <ChatMessage key={i} {...m} />
+        ))}
       </div>
-      <input value={input} onChange={e => setInput(e.target.value)}
-             onKeyDown={e => e.key === 'Enter' && send()} />
+      <input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && send()}
+      />
       <button onClick={send}>Ask</button>
     </div>
   );
@@ -1135,22 +1210,22 @@ The sliders on the frontend (mobility_change, vaccination_change) call `/simulat
 def simulate(body: SimulateRequest, request: Request):
     model = request.app.state.model_reg
     df    = request.app.state.features
-    
+
     latest = df[df["region"] == body.region].sort_values("date").iloc[-1].copy()
-    
+
     # Apply intervention deltas
     latest["mobility_index"]                += body.interventions.get("mobility_change", 0)
     latest["people_vaccinated_per_hundred"] += body.interventions.get("vaccination_change", 0) * 100
     latest["stringency_index"]              += body.interventions.get("stringency_change", 0) * 100
-    
+
     # Predict baseline (no intervention)
     X_base = df[df["region"]==body.region].sort_values("date").iloc[-1][FEATURE_COLS].values.reshape(1,-1)
     baseline = [int(model.predict(X_base)[0])] * body.days  # simplified
-    
+
     # Predict with intervention
     X_sim  = latest[FEATURE_COLS].values.reshape(1, -1)
     simmed = [int(model.predict(X_sim)[0])] * body.days    # simplified
-    
+
     return SimulateResponse(
         baseline_forecast=baseline,
         simulated_forecast=simmed,
@@ -1180,6 +1255,7 @@ Format as JSON array: [{"timeline": "...", "action": "...", "driver": "...", "so
 ### Feature 3: Risk Explanation Dashboard (SHAP Visual)
 
 On the frontend, `SHAPBar.jsx` renders a waterfall-style bar chart where:
+
 - Red bars = features pushing risk UP (positive SHAP)
 - Green bars = features pushing risk DOWN (negative SHAP)
 - Width = magnitude of impact
@@ -1188,14 +1264,14 @@ This is the single most impressive visual for judges because it makes the model 
 
 ```jsx
 // frontend/src/components/SHAPBar.jsx
-import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip } from "recharts";
 
 function SHAPBar({ explainData }) {
   const data = [
-    ...explainData.top_positive.map(f => ({...f, impact: +f.impact})),
-    ...explainData.top_negative.map(f => ({...f, impact: +f.impact})),
+    ...explainData.top_positive.map((f) => ({ ...f, impact: +f.impact })),
+    ...explainData.top_negative.map((f) => ({ ...f, impact: +f.impact })),
   ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
-  
+
   return (
     <BarChart data={data} layout="vertical">
       <XAxis type="number" domain={[-0.5, 0.5]} />
@@ -1203,7 +1279,7 @@ function SHAPBar({ explainData }) {
       <Tooltip />
       <Bar dataKey="impact">
         {data.map((entry, i) => (
-          <Cell key={i} fill={entry.impact > 0 ? '#ef4444' : '#22c55e'} />
+          <Cell key={i} fill={entry.impact > 0 ? "#ef4444" : "#22c55e"} />
         ))}
       </Bar>
     </BarChart>
@@ -1218,9 +1294,11 @@ function SHAPBar({ explainData }) {
 ---
 
 ### DAY 1 — Data Pipeline + ML Foundation
+
 **Owner: ML Engineer**
 
 #### Block 1 (9AM–11AM): Environment Setup
+
 ```bash
 # 1. Create virtualenv
 python -m venv venv && source venv/bin/activate
@@ -1236,20 +1314,24 @@ touch ml-service/app/ml/{feature_engineering.py,train.py,shap_explainer.py}
 # 4. Verify Python can download data
 python -c "import pandas as pd; pd.read_csv('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv').head()"
 ```
+
 **Expected output:** DataFrame prints without error.
 
 #### Block 2 (11AM–1PM): Data Ingestion + Merge
+
 - Implement `load_jhu_data()`, `load_owid_data()` in `feature_engineering.py`
 - Merge on `[region, date]` — use outer join, fill NaN with 0
 - Save merged raw to `data/raw/merged_raw.csv`
 - **Test:** `df["region"].unique()` shows 180+ countries
 
 #### Block 3 (2PM–4PM): Feature Engineering
+
 - Implement `engineer_features()` with all lag features, rolling stats, growth rate
 - Run on full dataset, save to `data/processed/features.csv`
 - **Test:** Check `features.csv` has columns: lag_1, lag_7, rolling_mean_7, growth_rate_7d, target_cases_7d, risk_label
 
 #### Block 4 (4PM–6PM): Train XGBoost + Save
+
 - Implement and run `train.py`
 - Verify `models/` folder has: `xgb_forecast.pkl`, `xgb_risk.pkl`, `shap_explainer.pkl`
 - **Test:** Load model, run prediction on Italy, get a number. Print RMSE.
@@ -1257,9 +1339,11 @@ python -c "import pandas as pd; pd.read_csv('https://raw.githubusercontent.com/C
 ---
 
 ### DAY 2 — FastAPI ML Service + SHAP + RAG Ingestion
+
 **Owner: ML Engineer + Backend Dev**
 
 #### Block 1 (9AM–11AM): Start FastAPI ML Service
+
 ```bash
 cd ml-service
 # Create main.py with startup model loading
@@ -1271,14 +1355,17 @@ curl -X POST http://localhost:8001/predict \
   -H "Content-Type: application/json" \
   -d '{"region": "Italy", "days": 7}'
 ```
+
 **Expected output:** JSON with `forecast` array and `risk_level`
 
 #### Block 2 (11AM–1PM): /explain and /simulate Endpoints
+
 - Implement SHAP endpoint: load `shap_explainer.pkl`, compute `shap_values` for latest region row
 - Extract top 3 positive, top 3 negative contributors
 - **Test:** `curl -X POST http://localhost:8001/explain -d '{"region":"Italy"}'`
 
 #### Block 3 (2PM–4PM): RAG Service Setup
+
 ```bash
 mkdir -p rag-service/app/{routers,ingestion,retrieval}
 pip install langchain langchain-openai pinecone-client pypdf2
@@ -1290,23 +1377,28 @@ export PINECONE_API_KEY=...
 # Create index + ingest (run once)
 python rag-service/app/ingestion/ingest_docs.py
 ```
+
 - Download WHO/CDC PDFs manually (2–3 documents is enough for hackathon)
 - **Test:** Check Pinecone dashboard → index exists with N vectors
 
 #### Block 4 (4PM–6PM): RAG /retrieve Endpoint
+
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
 curl -X POST http://localhost:8003/retrieve \
   -d '{"query":"mobility intervention outbreak control","top_k":3}'
 ```
+
 **Expected output:** JSON with `context` field containing chunked guidelines text.
 
 ---
 
 ### DAY 3 — LangGraph Agent + Node.js Backend
+
 **Owner: Backend Dev + AI Engineer**
 
 #### Block 1 (9AM–11AM): LangGraph Agent Setup
+
 ```bash
 mkdir -p agent/app/{graph,tools}
 pip install langgraph langchain-openai
@@ -1323,6 +1415,7 @@ pip install langgraph langchain-openai
 ```
 
 #### Block 2 (11AM–1PM): Test Agent Locally (NO FastAPI yet)
+
 ```python
 # Quick test script: agent/test_agent.py
 from app.graph.build_graph import build_agent_graph
@@ -1337,9 +1430,11 @@ result = graph.invoke({
 })
 print(result["final_answer"])
 ```
+
 **Expected output:** Multi-paragraph structured answer. Fix any errors before wrapping in FastAPI.
 
 #### Block 3 (2PM–4PM): Agent FastAPI Wrapper
+
 ```python
 # agent/app/main.py
 @app.post("/agent/chat")
@@ -1360,6 +1455,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
 ```
 
 #### Block 4 (4PM–6PM): Node.js Backend
+
 ```bash
 cd backend && npm init -y
 npm install express cors axios redis dotenv
@@ -1378,9 +1474,11 @@ curl -X POST http://localhost:3001/api/predict \
 ---
 
 ### DAY 4 — React Frontend + Integration
+
 **Owner: Frontend Dev**
 
 #### Block 1 (9AM–11AM): React Setup + API Client
+
 ```bash
 npx create-react-app frontend --template typescript  # or plain JS
 cd frontend && npm install axios @tanstack/react-query recharts leaflet react-leaflet zustand
@@ -1388,22 +1486,27 @@ cd frontend && npm install axios @tanstack/react-query recharts leaflet react-le
 
 ```javascript
 // src/api/client.js
-import axios from 'axios';
-const api = axios.create({ baseURL: process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001/api' });
+import axios from "axios";
+const api = axios.create({
+  baseURL: process.env.REACT_APP_BACKEND_URL || "http://localhost:3001/api",
+});
 export default api;
 ```
 
 #### Block 2 (11AM–1PM): Dashboard Layout + MapView
+
 - Use `react-leaflet` with `GeoJSON` layer for country outlines
 - Color countries by `risk_level` from `/predict` (red=High, yellow=Medium, green=Low)
 - Click on country → triggers `selectedRegion` state update → other components react
 
 #### Block 3 (2PM–4PM): ForecastChart + SHAPBar
+
 - `ForecastChart`: Line chart with actual cases (historical) + predicted (dashed)
 - `SHAPBar`: Horizontal bar with color coded by sign
 - Wire to `useForecast(selectedRegion)` and `useExplain(selectedRegion)` hooks
 
 #### Block 4 (4PM–6PM): ChatUI + ScenarioSliders
+
 - ChatUI: Simple message list + input. POST to `/api/chat`, display `answer`
 - ScenarioSliders: 3 sliders → state → debounced POST to `/api/simulate` → overlay simulated line on ForecastChart
 - **Test:** Full end-to-end: select Italy on map → see forecast → open chat → ask "Why is Italy high risk?" → get agentic answer
@@ -1411,43 +1514,46 @@ export default api;
 ---
 
 ### DAY 5 — Polish, Testing, Demo Prep
+
 **Owner: Full Team**
 
 #### Block 1 (9AM–11AM): Bug Fixes + Error Handling
+
 - Add loading spinners to all async components
 - Add error toast for failed API calls
 - Handle edge cases: unknown region, model not found, Pinecone timeout
 
 #### Block 2 (11AM–1PM): Docker Compose (Optional but impressive)
+
 ```yaml
 # docker-compose.yml
-version: '3.8'
+version: "3.8"
 services:
   redis:
     image: redis:alpine
     ports: ["6379:6379"]
-  
+
   ml-service:
     build: ./ml-service
     ports: ["8001:8001"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8001
-  
+
   rag-service:
     build: ./rag-service
     ports: ["8003:8003"]
     env_file: ./rag-service/.env
-  
+
   agent:
     build: ./agent
     ports: ["8002:8002"]
     env_file: ./agent/.env
     depends_on: [ml-service, rag-service]
-  
+
   backend:
     build: ./backend
     ports: ["3001:3001"]
     depends_on: [redis, agent, ml-service]
-  
+
   frontend:
     build: ./frontend
     ports: ["3000:3000"]
@@ -1455,7 +1561,9 @@ services:
 ```
 
 #### Block 3 (2PM–4PM): Demo Walkthrough Rehearsal
+
 Rehearse this exact sequence:
+
 1. Show Italy on risk map → RED (High risk)
 2. Click Italy → ForecastChart shows rising trend
 3. Open SHAP bar → "retail mobility is the top driver"
@@ -1464,8 +1572,10 @@ Rehearse this exact sequence:
 6. Show the structured 4-part answer with policy recommendations
 
 #### Block 4 (4PM–6PM): GitHub + README
+
 ```markdown
 # README.md sections:
+
 1. System Architecture diagram (ASCII or image)
 2. How to run (docker-compose up OR manual steps)
 3. Dataset sources + download instructions
@@ -1479,13 +1589,13 @@ Rehearse this exact sequence:
 
 ### Why LangGraph over LangChain Agents?
 
-| | LangChain AgentExecutor | LangGraph |
-|---|---|---|
-| Control flow | Implicit, hard to debug | Explicit graph — you see every edge |
-| Cycles | Limited | First-class support |
-| State | No built-in shared state | TypedDict state passed through all nodes |
-| Debugging | print() or langsmith | Step-by-step node inspection |
-| Hackathon value | "We used LangChain" | "We designed a stateful reasoning graph" |
+|                 | LangChain AgentExecutor  | LangGraph                                |
+| --------------- | ------------------------ | ---------------------------------------- |
+| Control flow    | Implicit, hard to debug  | Explicit graph — you see every edge      |
+| Cycles          | Limited                  | First-class support                      |
+| State           | No built-in shared state | TypedDict state passed through all nodes |
+| Debugging       | print() or langsmith     | Step-by-step node inspection             |
+| Hackathon value | "We used LangChain"      | "We designed a stateful reasoning graph" |
 
 ### Why Microservices over Monolith?
 
@@ -1496,12 +1606,12 @@ Rehearse this exact sequence:
 
 ### Latency Bottlenecks (and fixes)
 
-| Bottleneck | Latency | Fix |
-|---|---|---|
-| Pinecone query | ~300–500ms | Cache embedding + results in Redis for same query |
-| GPT-4o synthesis | ~2–4s | Stream the response token by token to frontend |
-| XGBoost predict | ~10–50ms | Negligible — no fix needed |
-| Agent full cycle | ~5–8s | Show typing indicator in ChatUI |
+| Bottleneck       | Latency    | Fix                                               |
+| ---------------- | ---------- | ------------------------------------------------- |
+| Pinecone query   | ~300–500ms | Cache embedding + results in Redis for same query |
+| GPT-4o synthesis | ~2–4s      | Stream the response token by token to frontend    |
+| XGBoost predict  | ~10–50ms   | Negligible — no fix needed                        |
+| Agent full cycle | ~5–8s      | Show typing indicator in ChatUI                   |
 
 ### Redis Improving UX
 
