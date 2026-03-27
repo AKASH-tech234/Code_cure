@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend (Next.js)
 
-## Getting Started
+## Run Frontend Only
 
-First, run the development server:
-
-```bash
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\frontend
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- http://localhost:3000
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Run Full Stack (from project root)
 
-## Learn More
+Start each service in a separate terminal.
 
-To learn more about Next.js, take a look at the following resources:
+### Agent Note
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- No separate agent server startup is required.
+- The backend executes agent logic in-process for `POST /query`.
+- Keep `backend`, `ml-service`, and `rag-service` running for chat/agent flows.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Terminal 1: Backend Gateway
 
-## Deploy on Vercel
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\backend
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Terminal 2: ML Service
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\ml-service
+uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+### Terminal 3: RAG Service
+
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\rag-service
+uvicorn app.main:app --host 127.0.0.1 --port 8003 --reload
+```
+
+### Terminal 4: Frontend
+
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\frontend
+npm run dev
+```
+
+## Health Checks
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8000/health -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:8001/health -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:8003/docs -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:3000 -UseBasicParsing
+```

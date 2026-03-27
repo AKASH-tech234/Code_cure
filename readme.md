@@ -3,6 +3,85 @@
 > **CODECURE AI Hackathon | Corrected Architecture + Micro-Step Execution Guide**
 > **5-Day Build Plan | Small Team Optimized**
 
+---
+
+## 🚀 Run All Servers (Windows PowerShell)
+
+Use 4 separate terminals.
+
+### Agent Runtime Note
+
+- You do **not** need to start a separate `agent` server for chat/query.
+- The backend runs the LangGraph agent **in-process** via `backend/app/services/agent_runner.py`.
+- As long as backend + ml-service + rag-service are running, `/query` uses the agent correctly.
+
+### 1) Backend Gateway (port 8000)
+
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\backend
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### 2) ML Service (port 8001)
+
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\ml-service
+uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+### 3) RAG Service (port 8003)
+
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\rag-service
+uvicorn app.main:app --host 127.0.0.1 --port 8003 --reload
+```
+
+### 4) Frontend (port 3000)
+
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\frontend
+npm run dev
+```
+
+### 5) Verify Everything Is Running
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8000/health -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:8001/health -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:8003/docs -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:3000 -UseBasicParsing
+```
+
+Expected:
+
+- Gateway `/health` returns JSON with service `gateway`
+- ML `/health` returns JSON with service `ml-service`
+- RAG `/docs` returns HTTP 200
+- Frontend root returns HTTP 200
+
+### 6) One-Time Dependency Install (if needed)
+
+```powershell
+cd C:\Users\akash\iit_bhu\techsta\backend
+pip install -r requirements.txt
+
+cd C:\Users\akash\iit_bhu\techsta\ml-service
+pip install -r requirements.txt
+
+cd C:\Users\akash\iit_bhu\techsta\rag-service
+pip install -r requirements.txt
+
+cd C:\Users\akash\iit_bhu\techsta\agent
+pip install -r requirements.txt
+
+cd C:\Users\akash\iit_bhu\techsta\frontend
+npm install
+```
+
+Note:
+
+- `agent/requirements.txt` should still be installed because backend imports and executes agent modules directly.
+
 ### ✅ Corrected Architecture (Component-Precise)
 
 ```
