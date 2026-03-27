@@ -7,10 +7,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-RAG_URL = os.getenv("RAG_URL")
-
-if not RAG_URL:
-    raise ValueError("RAG_URL not set in environment")
+RAG_URL = os.getenv("RAG_URL", "http://localhost:8003")
 
 
 def rag_tool(query: str, top_k: int = 5) -> dict:

@@ -1,32 +1,32 @@
 import requests
 import os
+import logging
 
-ML_URL = os.getenv("ML_URL", "http://localhost:8004")
+logger = logging.getLogger(__name__)
+
+ML_URL = os.getenv("ML_URL", "http://localhost:8001")
 
 
-def simulate_tool(region: str, intervention: dict):
+def simulate_tool(region: str, intervention: dict) -> dict:
+    """
+    Calls ML service /simulate endpoint.
+    No hardcoded fallbacks.
+    """
     try:
+        payload = {
+            "region_id": region,
+            "intervention": {
+                "mobility_reduction": float(intervention.get("mobility_reduction") or 0),
+                "vaccination_increase": float(intervention.get("vaccination_increase") or 0),
+            }
+        }
         res = requests.post(
             f"{ML_URL}/simulate",
-            json={
-                "region": region,
-                "intervention": intervention
-            },
-            timeout=3
+            json=payload,
+            timeout=10
         )
+        res.raise_for_status()
         return res.json()
-
-    except Exception:
-        # 🔥 fallback mock
-        return {
-            "region": region,
-            "scenario": intervention,
-            "baseline_cases": [12000, 14000, 16000, 18000],
-            "simulated_cases": [12000, 13000, 13500, 14000],
-            "impact": {
-                "cases_reduction_percent": 22,
-                "peak_delay_days": 5,
-                "risk_change": "high → moderate"
-            },
-            "interpretation": "Reducing mobility slows transmission significantly."
-        }
+    except Exception as e:
+        logger.error("[SIMULATE_TOOL] Error: %s", str(e))
+        raise

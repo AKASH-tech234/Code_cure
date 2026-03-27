@@ -1,166 +1,228 @@
-import logging
-from app.tools.rag_tool import rag_tool
-from app.llm.client import generate_answer
-from app.tools.forecast_tool import forecast_tool
-from app.tools.simulate_tool import simulate_tool
-logger = logging.getLogger(__name__)
-import json
-import json
-from app.llm.client import generate_answer
+"""
+Agent graph nodes — API-safe, no CLI interaction.
 
+Nodes:
+1. planner_node — extracts intent, region, tool, missing fields
+2. tool_node — dispatches to forecast/simulate/risk/rag tools
+3. llm_node — synthesizes final answer from tool outputs
+
+NO input(), NO print(), NO loops.
+"""
+
+import json
+import logging
+from ..llm.client import generate_answer
+from ..tools.forecast_tool import forecast_tool
+from ..tools.simulate_tool import simulate_tool
+from ..tools.risk_tool import risk_tool
+from ..tools.rag_tool import rag_tool
+
+logger = logging.getLogger(__name__)
+
+
+# ── NODE 1: PLANNER ──────────────────────────────────────────────────
 
 def planner_node(state):
+    """
+    Extracts structured intent from user query + memory.
+    Returns strict JSON with intent, tool, region, missing_fields.
+    No CLI interaction — followup is returned as data, not asked interactively.
+    """
     query = state["query"]
     memory = state.get("memory", {})
 
-    prompt = f"""
-You are an AI planner.
+    prompt = f"""You are a precise AI planner for an epidemic intelligence system.
 
-Existing known information:
-{memory}
+Known context from previous turns:
+- region: {memory.get("region_id", "unknown")}
+- last_intent: {memory.get("last_intent", "none")}
+- previous_queries: {memory.get("previous_queries", [])}
 
-Extract structured data from query.
+User query: {query}
 
-Return JSON:
+Extract structured data. You MUST return ONLY valid JSON, nothing else:
 
 {{
-  "intent": "...",
-  "tool": "...",
-  "region": "... or null",
+  "intent": "forecast|simulate|risk|general_info",
+  "tool": "forecast|simulate|risk|rag|none",
+  "region": "ISO alpha-3 code or null",
   "intervention": {{
-    "mobility_reduction": float or null,
-    "vaccination_increase": float or null
+    "mobility_reduction": "float 0-1 or null",
+    "vaccination_increase": "float 0-1 or null"
   }},
-  "missing_fields": [],
-  "reasoning": "...",
-  "followup_question": "if missing fields, ask a natural question"
+  "missing_fields": ["list of required but missing fields"],
+  "reasoning": "one sentence explaining your decision",
+  "followup_question": "natural question to ask if fields are missing, or empty string"
 }}
 
 Rules:
-- Merge previous known info with new query
-- If something missing → add to missing_fields
-- Also generate a natural followup_question
-
-Query:
-{query}
-"""
+- If region is in memory but not in query, use memory region
+- For forecast/risk intent, region is required
+- For simulate intent, region AND intervention values are required
+- For general_info, no fields required
+- If a required field is missing, add it to missing_fields
+- Region must be ISO alpha-3 (ITA, IND, USA, BRA, GBR, DEU, FRA, JPN, ZAF, AUS)
+- Return ONLY the JSON, no markdown, no explanation"""
 
     response = generate_answer(prompt)
 
     try:
-        parsed = json.loads(response)
+        # Strip markdown code fences if present
+        cleaned = response.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
 
-        # 🔥 merge memory
-        new_memory = {**memory}
+        parsed = json.loads(cleaned)
 
-        if parsed.get("region"):
-            new_memory["region"] = parsed["region"]
+        # Merge memory-based region if planner didn't find one
+        region = parsed.get("region") or memory.get("region_id") or ""
 
-        if parsed.get("intervention"):
-            new_memory.update(parsed["intervention"])
+        # Build intervention dict
+        intervention = parsed.get("intervention", {})
+        if intervention:
+            intervention = {
+                "mobility_reduction": intervention.get("mobility_reduction"),
+                "vaccination_increase": intervention.get("vaccination_increase"),
+            }
+
+        # Determine missing fields
+        missing_fields = parsed.get("missing_fields", [])
+        intent = parsed.get("intent", "general_info")
+        tool = parsed.get("tool", "rag")
+
+        # Auto-detect missing for forecast/risk
+        if intent in ("forecast", "risk") and not region:
+            if "region_id" not in missing_fields:
+                missing_fields.append("region_id")
+
+        # Auto-detect missing for simulate
+        if intent == "simulate":
+            if not region and "region_id" not in missing_fields:
+                missing_fields.append("region_id")
+            if not intervention.get("mobility_reduction") and not intervention.get("vaccination_increase"):
+                if "intervention" not in missing_fields:
+                    missing_fields.append("intervention")
+
+        followup_question = parsed.get("followup_question", "")
+        if missing_fields and not followup_question:
+            followup_question = f"Could you please specify: {', '.join(missing_fields)}?"
 
         return {
-            "intent": parsed["intent"],
-            "tool": parsed["tool"],
-            "region": new_memory.get("region"),
-            "intervention": {
-                "mobility_reduction": new_memory.get("mobility_reduction"),
-                "vaccination_increase": new_memory.get("vaccination_increase"),
-            },
-            "missing_fields": parsed.get("missing_fields", []),
+            "intent": intent,
+            "tool": tool,
+            "region": region,
+            "intervention": intervention,
+            "missing_fields": missing_fields,
             "reasoning": parsed.get("reasoning", ""),
-            "followup_question": parsed.get("followup_question", ""),
-            "memory": new_memory
+            "followup_question": followup_question,
+            "memory": {**memory, "region_id": region} if region else memory,
         }
 
-    except:
-        return {"missing_fields": [], "memory": memory}
-    
-    
-from app.tools.forecast_tool import forecast_tool
-from app.tools.simulate_tool import simulate_tool
-from app.tools.rag_tool import rag_tool
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning("[PLANNER] Failed to parse LLM output: %s", str(e))
+        # Fallback: treat as general_info with rag
+        return {
+            "intent": "general_info",
+            "tool": "rag",
+            "region": memory.get("region_id", ""),
+            "intervention": {},
+            "missing_fields": [],
+            "reasoning": "Could not parse planner output, falling back to RAG",
+            "followup_question": "",
+            "memory": memory,
+        }
 
 
-def followup_node(state):
-    question = state.get("followup_question")
-
-    if not state.get("missing_fields"):
-        return {}
-
-    print("\n🤖:", question)
-
-    user_input = input("👤: ")
-
-    # 🔥 update query
-    return {
-        "query": user_input
-    }
+# ── NODE 2: TOOL EXECUTOR ────────────────────────────────────────────
 
 def tool_node(state):
-    tool = state.get("tool")
+    """
+    Dispatches to the appropriate tool based on planner output.
+    Tools call external services — no hardcoded data.
+    Returns context string for the synthesizer.
+    """
+    tool = state.get("tool", "")
+    region = state.get("region", "")
+    intervention = state.get("intervention", {})
+    query = state.get("query", "")
 
-    if tool == "forecast_tool":
-        return {
-            "context": forecast_tool(
-                region=state["region"]
-            )
-        }
+    context_parts = []
+    sources = []
 
-    elif tool == "simulate_tool":
-        return {
-            "context": simulate_tool(
-                region=state["region"],
-                intervention=state["intervention"]
-            )
-        }
+    try:
+        if tool == "forecast":
+            result = forecast_tool(region=region)
+            context_parts.append(f"FORECAST DATA:\n{json.dumps(result, indent=2)}")
 
-    elif tool == "rag_tool":
-        return rag_tool(state["query"])
+        elif tool == "simulate":
+            result = simulate_tool(region=region, intervention=intervention)
+            context_parts.append(f"SIMULATION DATA:\n{json.dumps(result, indent=2)}")
 
-    return {}
+        elif tool == "risk":
+            result = risk_tool(region=region)
+            context_parts.append(f"RISK ASSESSMENT:\n{json.dumps(result, indent=2)}")
 
-# def human_input_node(state):
-#     missing = state.get("missing_fields", [])
+        elif tool == "rag":
+            rag_result = rag_tool(query)
+            context_parts.append(f"KNOWLEDGE BASE:\n{rag_result.get('context', '')}")
+            sources = rag_result.get("sources", [])
 
-#     if not missing:
-#         return {}
+        elif tool == "none":
+            pass
 
-#     print("\n⚠️ Missing required fields:", missing)
+        else:
+            logger.warning("[TOOL] Unknown tool: %s", tool)
 
-#     updated = {}
+    except Exception as e:
+        logger.error("[TOOL] Error executing %s: %s", tool, str(e))
+        context_parts.append(f"[Tool error: {str(e)}]")
 
-#     for field in missing:
-#         value = input(f"Please provide {field}: ")
-#         updated[field] = value
-
-#     return updated
-def rag_node(state):
-    if state.get("tool") != "rag_tool":
-        return {"context": "", "sources": []}
-
-    query = state["query"]
-
-    res = rag_tool(query)
+    # For forecast/simulate/risk, also try to get RAG context
+    if tool in ("forecast", "simulate", "risk") and query:
+        try:
+            rag_result = rag_tool(query, top_k=3)
+            if rag_result.get("context"):
+                context_parts.append(f"\nRELEVANT GUIDELINES:\n{rag_result['context']}")
+                sources.extend(rag_result.get("sources", []))
+        except Exception as e:
+            logger.warning("[TOOL] RAG supplemental call failed: %s", str(e))
 
     return {
-        "context": res["context"],
-        "sources": res["sources"]
+        "context": "\n\n".join(context_parts),
+        "sources": list(set(sources)),
     }
+
+
+# ── NODE 3: LLM SYNTHESIZER ──────────────────────────────────────────
+
 def llm_node(state):
-    prompt = f"""
-You are an epidemiology expert.
+    """
+    Synthesizes final answer from tool outputs.
+    Produces structured, scientifically grounded explanation.
+    """
+    prompt = f"""You are an epidemic intelligence analyst.
 
-Planner reasoning:
-{state.get("reasoning")}
+User query: {state["query"]}
 
-User query:
-{state["query"]}
+Planner reasoning: {state.get("reasoning", "")}
 
-Data:
-{state.get("context")}
+Data and context:
+{state.get("context", "No data available.")}
 
-Provide a clear explanation.
-"""
+Instructions:
+- Use ONLY the provided data to answer
+- Structure your answer clearly with sections
+- If forecast data is present, summarize trends
+- If risk data is present, explain risk drivers
+- If simulation data is present, compare baseline vs intervention
+- If guidelines are present, cite specific recommendations
+- Never fabricate statistics
+- Be concise but thorough
+- Focus on actionable insights"""
 
-    return {"answer": generate_answer(prompt)}
+    answer = generate_answer(prompt)
+
+    return {"answer": answer}
