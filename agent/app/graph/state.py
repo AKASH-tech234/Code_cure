@@ -20,6 +20,7 @@ class AgentState(TypedDict):
     # TOOL OUTPUT
     context: str                            # Combined tool output (stringified)
     sources: List[str]                      # RAG source attributions
+    tool_payloads: Dict[str, Any]           # Structured tool JSON outputs by tool name
 
     # FINAL OUTPUT
     answer: str                             # LLM-synthesized response

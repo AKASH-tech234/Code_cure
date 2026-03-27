@@ -56,5 +56,6 @@ async def query(body: QueryRequest):
         tool=result.get("tool"),
         reasoning=result.get("reasoning"),
         sources=result.get("sources") or [],
+        structured_data=result.get("structured_data"),
         followup=followup
     )

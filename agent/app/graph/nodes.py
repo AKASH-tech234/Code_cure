@@ -102,7 +102,9 @@ Rules:
         if intent == "simulate":
             if not region and "region_id" not in missing_fields:
                 missing_fields.append("region_id")
-            if not intervention.get("mobility_reduction") and not intervention.get("vaccination_increase"):
+            mobility = intervention.get("mobility_reduction")
+            vaccination = intervention.get("vaccination_increase")
+            if mobility is None or vaccination is None:
                 if "intervention" not in missing_fields:
                     missing_fields.append("intervention")
 
@@ -142,7 +144,7 @@ def tool_node(state):
     """
     Dispatches to the appropriate tool based on planner output.
     Tools call external services — no hardcoded data.
-    Returns context string for the synthesizer.
+    Returns normalized structured payloads and context string for synthesis.
     """
     tool = state.get("tool", "")
     region = state.get("region", "")
@@ -151,24 +153,33 @@ def tool_node(state):
 
     context_parts = []
     sources = []
+    tool_payloads = {}
 
     try:
         if tool == "forecast":
             result = forecast_tool(region=region)
+            tool_payloads["forecast"] = result
             context_parts.append(f"FORECAST DATA:\n{json.dumps(result, indent=2)}")
 
         elif tool == "simulate":
             result = simulate_tool(region=region, intervention=intervention)
+            tool_payloads["simulate"] = result
             context_parts.append(f"SIMULATION DATA:\n{json.dumps(result, indent=2)}")
 
         elif tool == "risk":
             result = risk_tool(region=region)
+            tool_payloads["risk"] = result
             context_parts.append(f"RISK ASSESSMENT:\n{json.dumps(result, indent=2)}")
 
         elif tool == "rag":
             rag_result = rag_tool(query)
-            context_parts.append(f"KNOWLEDGE BASE:\n{rag_result.get('context', '')}")
-            sources = rag_result.get("sources", [])
+            normalized_rag = {
+                "context": rag_result.get("context", ""),
+                "sources": rag_result.get("sources", []),
+            }
+            tool_payloads["rag"] = normalized_rag
+            context_parts.append(f"KNOWLEDGE BASE:\n{normalized_rag['context']}")
+            sources = normalized_rag["sources"]
 
         elif tool == "none":
             pass
@@ -184,15 +195,21 @@ def tool_node(state):
     if tool in ("forecast", "simulate", "risk") and query:
         try:
             rag_result = rag_tool(query, top_k=3)
-            if rag_result.get("context"):
-                context_parts.append(f"\nRELEVANT GUIDELINES:\n{rag_result['context']}")
-                sources.extend(rag_result.get("sources", []))
+            normalized_rag = {
+                "context": rag_result.get("context", ""),
+                "sources": rag_result.get("sources", []),
+            }
+            if normalized_rag["context"]:
+                tool_payloads["rag"] = normalized_rag
+                context_parts.append(f"\nRELEVANT GUIDELINES:\n{normalized_rag['context']}")
+                sources.extend(normalized_rag["sources"])
         except Exception as e:
             logger.warning("[TOOL] RAG supplemental call failed: %s", str(e))
 
     return {
         "context": "\n\n".join(context_parts),
         "sources": list(set(sources)),
+        "tool_payloads": tool_payloads,
     }
 
 
@@ -203,17 +220,23 @@ def llm_node(state):
     Synthesizes final answer from tool outputs.
     Produces structured, scientifically grounded explanation.
     """
+    payloads = state.get("tool_payloads") or {}
+    serialized_payloads = json.dumps(payloads, indent=2) if payloads else "{}"
+
     prompt = f"""You are an epidemic intelligence analyst.
 
 User query: {state["query"]}
 
 Planner reasoning: {state.get("reasoning", "")}
 
-Data and context:
+Structured tool outputs (JSON):
+{serialized_payloads}
+
+Additional context:
 {state.get("context", "No data available.")}
 
 Instructions:
-- Use ONLY the provided data to answer
+- Use ONLY the provided tool outputs and context to answer
 - Structure your answer clearly with sections
 - If forecast data is present, summarize trends
 - If risk data is present, explain risk drivers

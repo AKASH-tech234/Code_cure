@@ -34,7 +34,6 @@ class FollowUp(BaseModel):
     question: str
     missing_fields: List[str]
 
-
 class QueryResponse(BaseModel):
     session_id: str
     answer: Optional[str] = None
@@ -42,6 +41,7 @@ class QueryResponse(BaseModel):
     tool: Optional[str] = None
     reasoning: Optional[str] = None
     sources: List[str] = Field(default_factory=list)
+    structured_data: Optional[Dict[str, Any]] = None
     followup: Optional[FollowUp] = None
 
 
