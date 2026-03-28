@@ -3,6 +3,25 @@ export type Followup = {
   missing_fields: string[];
 };
 
+export type SlotStatus = {
+  required_fields: string[];
+  resolved_fields: string[];
+  missing_fields: string[];
+  is_complete: boolean;
+};
+
+export type VerificationStatus = {
+  status: "ready" | "missing_fields" | "error";
+  can_execute: boolean;
+  reason: string | null;
+};
+
+export type ExecutionStep = {
+  step: "planner" | "tool" | "llm";
+  status: "completed" | "skipped" | "blocked" | "failed";
+  detail: string | null;
+};
+
 export type ChartSeries = {
   name: string;
   values: number[];
@@ -57,6 +76,10 @@ export type QueryResponse = {
   sources: string[];
   structured_data: StructuredData | null;
   followup: Followup | null;
+  slot_status: SlotStatus | null;
+  verification: VerificationStatus | null;
+  execution_steps: ExecutionStep[];
+  fallback_used: boolean;
 };
 
 export type ForecastResponse = {

@@ -20,6 +20,15 @@ from ..tools.rag_tool import rag_tool
 logger = logging.getLogger(__name__)
 
 
+INTENT_REQUIRED_FIELDS = {
+    "forecast": ["region_id"],
+    "risk": ["region_id"],
+    "simulate": ["region_id", "intervention"],
+    "data_lookup": [],
+    "general_info": [],
+}
+
+
 # ── NODE 1: PLANNER ──────────────────────────────────────────────────
 
 def planner_node(state):
@@ -120,6 +129,8 @@ Rules:
             "missing_fields": missing_fields,
             "reasoning": parsed.get("reasoning", ""),
             "followup_question": followup_question,
+            "verification_status": "pending",
+            "verification_reason": "Planner completed; awaiting verifier gate.",
             "memory": {**memory, "region_id": region} if region else memory,
         }
 
@@ -134,8 +145,53 @@ Rules:
             "missing_fields": [],
             "reasoning": "Could not parse planner output, falling back to RAG",
             "followup_question": "",
+            "verification_status": "pending",
+            "verification_reason": "Planner fallback path; awaiting verifier gate.",
             "memory": memory,
         }
+
+
+def verifier_node(state):
+    """
+    Enforces pre-tool slot completeness checks.
+    Blocks execution with follow-up details when required slots are missing.
+    """
+    intent = state.get("intent", "general_info")
+    region = state.get("region", "")
+    intervention = state.get("intervention") or {}
+
+    required_fields = INTENT_REQUIRED_FIELDS.get(intent, [])
+    missing_fields = set(state.get("missing_fields") or [])
+
+    if "region_id" in required_fields and not region:
+        missing_fields.add("region_id")
+
+    if "intervention" in required_fields:
+        if (
+            intervention.get("mobility_reduction") is None
+            or intervention.get("vaccination_increase") is None
+        ):
+            missing_fields.add("intervention")
+
+    missing_list = sorted(missing_fields)
+
+    followup_question = state.get("followup_question", "")
+    if missing_list and not followup_question:
+        followup_question = f"Could you please specify: {', '.join(missing_list)}?"
+
+    if missing_list:
+        return {
+            "missing_fields": missing_list,
+            "followup_question": followup_question,
+            "verification_status": "missing_fields",
+            "verification_reason": f"Missing required fields: {', '.join(missing_list)}",
+        }
+
+    return {
+        "missing_fields": [],
+        "verification_status": "ready",
+        "verification_reason": "All required fields resolved; execution can proceed.",
+    }
 
 
 # ── NODE 2: TOOL EXECUTOR ────────────────────────────────────────────

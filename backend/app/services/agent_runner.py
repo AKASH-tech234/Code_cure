@@ -11,6 +11,7 @@ Responsibilities:
 import sys
 import os
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,17 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
+
+from agent.app.graph.state import AgentState
+
+
+INTENT_REQUIRED_FIELDS: dict[str, list[str]] = {
+    "forecast": ["region_id"],
+    "risk": ["region_id"],
+    "simulate": ["region_id", "intervention"],
+    "data_lookup": [],
+    "general_info": [],
+}
 
 
 def _day_labels(values: list) -> list[str]:
@@ -150,7 +162,94 @@ def _extract_structured_data(tool: str, tool_payloads: dict) -> dict | None:
     return None
 
 
-def run_agent(query: str, memory: dict, context: dict = None) -> dict:
+def _has_intervention(intervention: dict[str, Any] | None) -> bool:
+    if not isinstance(intervention, dict):
+        return False
+
+    return (
+        intervention.get("mobility_reduction") is not None
+        and intervention.get("vaccination_increase") is not None
+    )
+
+
+def _build_slot_status(intent: str, region: str, intervention: dict[str, Any], missing_fields: list[str]) -> dict:
+    required_fields = INTENT_REQUIRED_FIELDS.get(intent, [])
+
+    resolved_fields: list[str] = []
+    if region:
+        resolved_fields.append("region_id")
+    if _has_intervention(intervention):
+        resolved_fields.append("intervention")
+
+    missing_set = set(missing_fields or [])
+
+    # Guarantee response consistency even if planner underreports required fields.
+    for required in required_fields:
+        if required not in resolved_fields:
+            missing_set.add(required)
+
+    missing = sorted(missing_set)
+
+    return {
+        "required_fields": required_fields,
+        "resolved_fields": resolved_fields,
+        "missing_fields": missing,
+        "is_complete": len(missing) == 0,
+    }
+
+
+def _build_verification(slot_status: dict, error: str | None = None) -> dict:
+    if error:
+        return {
+            "status": "error",
+            "can_execute": False,
+            "reason": error,
+        }
+
+    if not slot_status.get("is_complete", False):
+        return {
+            "status": "missing_fields",
+            "can_execute": False,
+            "reason": f"Missing required fields: {', '.join(slot_status.get('missing_fields', []))}",
+        }
+
+    return {
+        "status": "ready",
+        "can_execute": True,
+        "reason": None,
+    }
+
+
+def _build_execution_steps(tool: str, missing_fields: list[str], error: str | None = None) -> list[dict]:
+    if error:
+        return [
+            {"step": "planner", "status": "failed", "detail": "Graph execution failed before completion."},
+            {"step": "tool", "status": "skipped", "detail": "Execution aborted due to error."},
+            {"step": "llm", "status": "skipped", "detail": "Execution aborted due to error."},
+        ]
+
+    if missing_fields:
+        return [
+            {"step": "planner", "status": "completed", "detail": "Intent and missing fields identified."},
+            {"step": "tool", "status": "blocked", "detail": "Tool execution blocked until missing fields are provided."},
+            {"step": "llm", "status": "skipped", "detail": "Final synthesis skipped until tool execution is possible."},
+        ]
+
+    if tool == "none":
+        return [
+            {"step": "planner", "status": "completed", "detail": "Query can be answered without tool execution."},
+            {"step": "tool", "status": "skipped", "detail": "No tool selected by planner."},
+            {"step": "llm", "status": "completed", "detail": "Answer synthesized directly."},
+        ]
+
+    return [
+        {"step": "planner", "status": "completed", "detail": "Intent and slots resolved."},
+        {"step": "tool", "status": "completed", "detail": f"Executed tool '{tool}'."},
+        {"step": "llm", "status": "completed", "detail": "Answer synthesized from tool outputs."},
+    ]
+
+
+def run_agent(query: str, memory: dict, context: dict[str, Any] | None = None) -> dict:
     """
     Run the LangGraph agent with injected memory.
 
@@ -172,7 +271,7 @@ def run_agent(query: str, memory: dict, context: dict = None) -> dict:
         graph = build_graph()
 
         # Build initial state from memory + query
-        initial_state = {
+        initial_state: AgentState = {
             "query": query,
             "intent": "",
             "tool": "",
@@ -186,6 +285,8 @@ def run_agent(query: str, memory: dict, context: dict = None) -> dict:
             "tool_payloads": {},
             "memory": memory,
             "followup_question": "",
+            "verification_status": "pending",
+            "verification_reason": "",
         }
 
         # Override region from explicit context if provided
@@ -198,42 +299,89 @@ def run_agent(query: str, memory: dict, context: dict = None) -> dict:
         result = graph.invoke(initial_state)
 
         # Check for followup (missing fields)
+        missing_fields = result.get("missing_fields") or []
+        intent = result.get("intent") or "general_info"
+        region = result.get("region") or ""
+        intervention = result.get("intervention") or {}
+        selected_tool = result.get("tool") or ""
+
         followup = None
-        if result.get("missing_fields"):
+        if missing_fields:
             followup = {
                 "question": result.get("followup_question", "Could you provide more details?"),
-                "missing_fields": result["missing_fields"]
+                "missing_fields": missing_fields
             }
 
         structured_data = _extract_structured_data(
-            result.get("tool") or "",
+            selected_tool,
             result.get("tool_payloads") or {},
+        )
+
+        slot_status = _build_slot_status(
+            intent=intent,
+            region=region,
+            intervention=intervention,
+            missing_fields=missing_fields,
+        )
+        verification = _build_verification(slot_status=slot_status)
+        if result.get("verification_status") == "missing_fields":
+            verification = {
+                "status": "missing_fields",
+                "can_execute": False,
+                "reason": result.get("verification_reason") or verification.get("reason"),
+            }
+        elif result.get("verification_status") == "ready":
+            verification = {
+                "status": "ready",
+                "can_execute": True,
+                "reason": result.get("verification_reason"),
+            }
+        execution_steps = _build_execution_steps(
+            tool=selected_tool,
+            missing_fields=missing_fields,
+        )
+        fallback_used = bool(
+            (result.get("reasoning") or "").lower().startswith("could not parse planner output")
+            or "[Tool error:" in (result.get("context") or "")
         )
 
         # Build memory updates
         memory_updates = {
             "query": query,
-            "last_intent": result.get("intent"),
+            "last_intent": intent,
         }
-        if result.get("region"):
-            memory_updates["region_id"] = result["region"]
+        if region:
+            memory_updates["region_id"] = region
             memory_updates["resolved_fields"] = ["region_id"]
-        if result.get("intervention"):
-            memory_updates["intervention"] = result["intervention"]
+        if intervention:
+            memory_updates["intervention"] = intervention
 
         return {
             "answer": result.get("answer") if not followup else None,
-            "intent": result.get("intent"),
-            "tool": result.get("tool"),
+            "intent": intent,
+            "tool": selected_tool,
             "reasoning": result.get("reasoning"),
             "sources": result.get("sources") or [],
             "structured_data": structured_data if not followup else None,
             "followup": followup,
+            "slot_status": slot_status,
+            "verification": verification,
+            "execution_steps": execution_steps,
+            "fallback_used": fallback_used,
             "memory_updates": memory_updates,
         }
 
     except Exception as e:
         logger.exception("[AGENT_RUNNER] Error running agent")
+        error_message = str(e)
+
+        slot_status = _build_slot_status(
+            intent="general_info",
+            region=memory.get("region_id") or "",
+            intervention=memory.get("intervention") or {},
+            missing_fields=[],
+        )
+
         return {
             "answer": None,
             "intent": None,
@@ -242,6 +390,10 @@ def run_agent(query: str, memory: dict, context: dict = None) -> dict:
             "sources": [],
             "structured_data": None,
             "followup": None,
+            "slot_status": slot_status,
+            "verification": _build_verification(slot_status=slot_status, error=error_message),
+            "execution_steps": _build_execution_steps(tool="", missing_fields=[], error=error_message),
+            "fallback_used": False,
             "memory_updates": {"query": query},
-            "error": str(e),
+            "error": error_message,
         }

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 
 
 # ── Gateway Request/Response Schemas ──────────────────────────────────
@@ -34,6 +34,25 @@ class FollowUp(BaseModel):
     question: str
     missing_fields: List[str]
 
+
+class SlotStatus(BaseModel):
+    required_fields: List[str] = Field(default_factory=list)
+    resolved_fields: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+    is_complete: bool
+
+
+class VerificationStatus(BaseModel):
+    status: Literal["ready", "missing_fields", "error"]
+    can_execute: bool
+    reason: Optional[str] = None
+
+
+class ExecutionStep(BaseModel):
+    step: Literal["planner", "tool", "llm"]
+    status: Literal["completed", "skipped", "blocked", "failed"]
+    detail: Optional[str] = None
+
 class QueryResponse(BaseModel):
     session_id: str
     answer: Optional[str] = None
@@ -43,6 +62,10 @@ class QueryResponse(BaseModel):
     sources: List[str] = Field(default_factory=list)
     structured_data: Optional[Dict[str, Any]] = None
     followup: Optional[FollowUp] = None
+    slot_status: Optional[SlotStatus] = None
+    verification: Optional[VerificationStatus] = None
+    execution_steps: List[ExecutionStep] = Field(default_factory=list)
+    fallback_used: bool = False
 
 
 class ErrorDetail(BaseModel):

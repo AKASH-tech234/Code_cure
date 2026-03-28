@@ -4,7 +4,7 @@ import logging
 
 load_dotenv()
 
-from app.routers import retrieve
+from app.routers import retrieve, ingest
 from app.retrieval import retriever  # import your module
 
 app = FastAPI()
@@ -20,3 +20,4 @@ def startup_event():
 
 
 app.include_router(retrieve.router, prefix="/retrieve")
+app.include_router(ingest.router, prefix="/ingest")

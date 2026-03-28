@@ -10,7 +10,7 @@ Graph flow:
 
 from langgraph.graph import StateGraph, END
 from .state import AgentState
-from .nodes import planner_node, tool_node, llm_node
+from .nodes import planner_node, verifier_node, tool_node, llm_node
 from .edges import route_after_planner
 
 
@@ -19,15 +19,19 @@ def build_graph():
 
     # Add nodes
     graph.add_node("planner", planner_node)
+    graph.add_node("verifier", verifier_node)
     graph.add_node("tool", tool_node)
     graph.add_node("llm", llm_node)
 
     # Entry point
     graph.set_entry_point("planner")
 
-    # Conditional edges from planner
+    # planner -> verifier gate
+    graph.add_edge("planner", "verifier")
+
+    # Conditional edges from verifier
     graph.add_conditional_edges(
-        "planner",
+        "verifier",
         route_after_planner,
         {
             "end": END,        # missing fields → return followup

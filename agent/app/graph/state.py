@@ -16,6 +16,8 @@ class AgentState(TypedDict):
     # MISSING FIELDS (for followup)
     missing_fields: List[str]               # Fields still needed (e.g. ["region_id"])
     followup_question: str                  # Natural question to ask user
+    verification_status: str                # ready | missing_fields
+    verification_reason: str                # Human-readable verification result
 
     # TOOL OUTPUT
     context: str                            # Combined tool output (stringified)

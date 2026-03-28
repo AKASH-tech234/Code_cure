@@ -1,6 +1,6 @@
 import logging
 from fastapi import APIRouter
-from ..schemas import QueryRequest, QueryResponse, FollowUp
+from ..schemas import QueryRequest, QueryResponse, FollowUp, SlotStatus, VerificationStatus, ExecutionStep
 from ..session import session_manager
 from ..services.agent_runner import run_agent
 
@@ -49,6 +49,19 @@ async def query(body: QueryRequest):
             missing_fields=result["followup"]["missing_fields"]
         )
 
+    slot_status = None
+    if result.get("slot_status"):
+        slot_status = SlotStatus(**result["slot_status"])
+
+    verification = None
+    if result.get("verification"):
+        verification = VerificationStatus(**result["verification"])
+
+    execution_steps = [
+        ExecutionStep(**step)
+        for step in (result.get("execution_steps") or [])
+    ]
+
     return QueryResponse(
         session_id=session_id,
         answer=result.get("answer"),
@@ -57,5 +70,9 @@ async def query(body: QueryRequest):
         reasoning=result.get("reasoning"),
         sources=result.get("sources") or [],
         structured_data=result.get("structured_data"),
-        followup=followup
+        followup=followup,
+        slot_status=slot_status,
+        verification=verification,
+        execution_steps=execution_steps,
+        fallback_used=bool(result.get("fallback_used", False)),
     )
