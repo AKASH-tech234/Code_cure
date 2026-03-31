@@ -1,0 +1,52 @@
+from fastapi import APIRouter, HTTPException
+from app.schemas import ForecastRequest, ForecastResponse
+from app.data.region_templates import (
+    get_region, compute_risk_score, risk_level_from_score, get_as_of_date
+)
+
+router = APIRouter()
+
+
+@router.post("", response_model=ForecastResponse)
+def forecast(body: ForecastRequest):
+    """
+    Forecast endpoint — predicts case trajectory for a region.
+
+    Uses region template data to generate a plausible forecast curve
+    based on base_cases * (1 + growth_rate)^day compounding.
+    """
+    region = get_region(body.region_id)
+    if not region:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Region '{body.region_id}' not found. Use ISO alpha-3 codes (e.g., ITA, IND, USA)."
+        )
+
+    base = region["base_cases"]
+    growth = region["growth_rate"]
+
+    # Generate forecast: compounding growth per day
+    predicted_cases = []
+    current = base
+    for day in range(body.horizon_days):
+        daily_growth = growth / 7  # weekly growth → daily
+        current = int(current * (1 + daily_growth))
+        predicted_cases.append(current)
+
+    # Compute risk
+    risk_score = compute_risk_score(
+        growth_rate=growth,
+        mobility=region["mobility_index"],
+        vaccination_rate=region["vaccination_rate"],
+        hospital_pressure=region["hospital_pressure"]
+    )
+
+    return ForecastResponse(
+        region_id=body.region_id.upper(),
+        predicted_cases=predicted_cases,
+        growth_rate=round(growth, 4),
+        risk_score=risk_score,
+        risk_level=risk_level_from_score(risk_score),
+        horizon_days=body.horizon_days,
+        as_of_date=get_as_of_date()
+    )

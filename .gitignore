@@ -1,0 +1,103 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Distribution / Packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Jupyter Notebooks checkpoints
+.ipynb_checkpoints/
+
+# ============================================================
+# Data & Large Files
+# ============================================================
+# Raw data folders (too large for git — use DVC or share separately)
+Epidemic_Spread_Prediction/data/
+data/
+
+# Model artifacts / saved models (can be large)
+Epidemic_Spread_Prediction/artifacts/
+artifacts/
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.joblib
+*.pt
+*.pth
+*.onnx
+
+# ============================================================
+# Output / Log Files
+# ============================================================
+*.txt
+# Allow README and requirements — don't ignore all .txt blindly
+!requirements.txt
+!README.txt
+
+out*.txt
+*.log
+
+# ============================================================
+# OS / Editor
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm / JetBrains
+.idea/
+
+# ============================================================
+# Web Development (techsta)
+# ============================================================
+node_modules/
+.next/
+out/
+build/
+.cache/
+.npm
+.eslintcache
+.stylelintcache
+*.local
+
+# Production
+.vercel
+dist/
+
+# ============================================================
+# Secrets & Environment Config
+# ============================================================
+.env
+*.env
+secrets.json
+config.secret.*
+
+# ============================================================
+# Misc
+# ============================================================
+*.tmp
+*.bak
+*.swp
+~$*
