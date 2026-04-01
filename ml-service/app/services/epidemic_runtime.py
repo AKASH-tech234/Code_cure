@@ -1,21 +1,27 @@
 """
 Internal epidemic runtime for ml-service.
 
-Phase 1 implementation notes:
-- USA-only model path is enabled.
-- Non-USA continues to use existing template behavior in routers.
-- If runtime initialization fails, routers gracefully fall back.
+Adapter-first implementation notes:
+- Epidemic_Spread_Prediction adapter is attempted first.
+- Legacy USA metadata runtime remains as an internal fallback.
+- Router-level template fallback remains unchanged for resilience.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
+
+from app.services.epidemic_model_adapter import (
+    AdapterForecastResult,
+    AdapterRiskResult,
+    AdapterSimulateResult,
+    EpidemicModelAdapter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,19 +76,24 @@ class EpiRiskResult:
 
 class EpidemicRuntime:
     """
-    Lightweight deterministic runtime placeholder for USA-only model behavior.
+    Runtime wrapper for model-priority behavior with backward-compatible fallback.
 
-    This runtime intentionally avoids adding heavyweight dependencies in this phase.
-    It loads metadata if present and uses deterministic trajectory logic derived from
-    metadata defaults. A later phase can swap this with artifact-backed model inference
-    without changing router contracts.
+    The adapter preserves existing request/response schemas and route behavior.
+    If adapter inference fails, legacy metadata logic remains available and router
+    template fallbacks still protect downstream consumers.
     """
 
     def __init__(self) -> None:
         self._ready = False
         self._metadata: dict[str, Any] = {}
+        self._adapter = EpidemicModelAdapter()
 
     def initialize(self) -> None:
+        try:
+            self._adapter.initialize()
+        except Exception:
+            logger.exception("[EPI_RUNTIME] Adapter initialization failed; legacy mode still available")
+
         metadata_path = os.getenv(MODEL_METADATA_PATH_ENV, _default_metadata_path())
 
         metadata: dict[str, Any] = {
@@ -111,17 +122,25 @@ class EpidemicRuntime:
 
         self._metadata = metadata
         self._ready = True
-        logger.info("[EPI_RUNTIME] Initialized (supported_regions=%s)", metadata.get("supported_regions"))
+        logger.info(
+            "[EPI_RUNTIME] Initialized (adapter_ready=%s, legacy_supported_regions=%s)",
+            self._adapter.is_ready,
+            metadata.get("supported_regions"),
+        )
 
     @property
     def is_ready(self) -> bool:
-        return self._ready
+        return self._adapter.is_ready or self._ready
 
-    def supports_region(self, region_id: str) -> bool:
+    def _supports_legacy_region(self, region_id: str) -> bool:
         if not self._ready:
             return False
         supported = self._metadata.get("supported_regions") or []
         return region_id.upper() in supported
+
+    def supports_region(self, region_id: str) -> bool:
+        region = region_id.upper()
+        return self._adapter.supports_region(region) or self._supports_legacy_region(region)
 
     def _risk_score(self, growth_rate: float, mobility: float, vaccination_rate: float, hospital_pressure: float) -> float:
         weights = self._metadata.get("risk_weights") or {}
@@ -149,9 +168,52 @@ class EpidemicRuntime:
             return "Medium"
         return "Low"
 
+    @staticmethod
+    def _from_adapter_forecast(result: AdapterForecastResult) -> EpiForecastResult:
+        return EpiForecastResult(
+            region_id=result.region_id,
+            predicted_cases=result.predicted_cases,
+            growth_rate=result.growth_rate,
+            risk_score=result.risk_score,
+            risk_level=result.risk_level,
+            horizon_days=result.horizon_days,
+            as_of_date=result.as_of_date,
+        )
+
+    @staticmethod
+    def _from_adapter_simulate(result: AdapterSimulateResult) -> EpiSimulateResult:
+        return EpiSimulateResult(
+            region_id=result.region_id,
+            baseline_cases=result.baseline_cases,
+            simulated_cases=result.simulated_cases,
+            delta_cases=result.delta_cases,
+            impact_summary=result.impact_summary,
+        )
+
+    @staticmethod
+    def _from_adapter_risk(result: AdapterRiskResult) -> EpiRiskResult:
+        return EpiRiskResult(
+            region_id=result.region_id,
+            risk_level=result.risk_level,
+            risk_score=result.risk_score,
+            drivers=[
+                EpiRiskDriver(factor=driver.factor, value=driver.value, weight=driver.weight)
+                for driver in result.drivers
+            ],
+        )
+
     def forecast(self, region_id: str, horizon_days: int) -> EpiForecastResult:
-        if not self.supports_region(region_id):
-            raise ValueError(f"Region '{region_id}' not supported by epidemic runtime")
+        region = region_id.upper()
+
+        if self._adapter.supports_region(region):
+            try:
+                adapter_result = self._adapter.forecast(region_id=region, horizon_days=horizon_days)
+                return self._from_adapter_forecast(adapter_result)
+            except Exception as exc:
+                logger.warning("[EPI_RUNTIME] Adapter forecast failed for %s: %s", region, exc)
+
+        if not self._supports_legacy_region(region):
+            raise ValueError(f"Region '{region}' not supported by epidemic runtime")
 
         base_cases = int(self._metadata.get("base_cases", 45000))
         growth_rate = float(self._metadata.get("weekly_growth_rate", 0.06))
@@ -170,7 +232,7 @@ class EpidemicRuntime:
         risk_score = self._risk_score(growth_rate, mobility, vaccination, hospital)
 
         return EpiForecastResult(
-            region_id=region_id.upper(),
+            region_id=region,
             predicted_cases=predicted_cases,
             growth_rate=round(growth_rate, 4),
             risk_score=risk_score,
@@ -180,8 +242,21 @@ class EpidemicRuntime:
         )
 
     def simulate(self, region_id: str, mobility_reduction: float, vaccination_increase: float) -> EpiSimulateResult:
-        if not self.supports_region(region_id):
-            raise ValueError(f"Region '{region_id}' not supported by epidemic runtime")
+        region = region_id.upper()
+
+        if self._adapter.supports_region(region):
+            try:
+                adapter_result = self._adapter.simulate(
+                    region_id=region,
+                    mobility_reduction=mobility_reduction,
+                    vaccination_increase=vaccination_increase,
+                )
+                return self._from_adapter_simulate(adapter_result)
+            except Exception as exc:
+                logger.warning("[EPI_RUNTIME] Adapter simulate failed for %s: %s", region, exc)
+
+        if not self._supports_legacy_region(region):
+            raise ValueError(f"Region '{region}' not supported by epidemic runtime")
 
         base_cases = int(self._metadata.get("base_cases", 45000))
         weekly_growth = float(self._metadata.get("weekly_growth_rate", 0.06))
@@ -219,7 +294,7 @@ class EpidemicRuntime:
         impact_summary = f"{intervention_desc} could avert ~{delta_cases:,} cases over {horizon_days} days"
 
         return EpiSimulateResult(
-            region_id=region_id.upper(),
+            region_id=region,
             baseline_cases=baseline_cases,
             simulated_cases=simulated_cases,
             delta_cases=delta_cases,
@@ -227,8 +302,17 @@ class EpidemicRuntime:
         )
 
     def risk(self, region_id: str) -> EpiRiskResult:
-        if not self.supports_region(region_id):
-            raise ValueError(f"Region '{region_id}' not supported by epidemic runtime")
+        region = region_id.upper()
+
+        if self._adapter.supports_region(region):
+            try:
+                adapter_result = self._adapter.risk(region_id=region)
+                return self._from_adapter_risk(adapter_result)
+            except Exception as exc:
+                logger.warning("[EPI_RUNTIME] Adapter risk failed for %s: %s", region, exc)
+
+        if not self._supports_legacy_region(region):
+            raise ValueError(f"Region '{region}' not supported by epidemic runtime")
 
         growth = float(self._metadata.get("weekly_growth_rate", 0.06))
         mobility = float(self._metadata.get("mobility_index", 0.30))
@@ -265,7 +349,7 @@ class EpidemicRuntime:
         ]
 
         return EpiRiskResult(
-            region_id=region_id.upper(),
+            region_id=region,
             risk_level=level,
             risk_score=score,
             drivers=drivers,
