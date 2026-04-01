@@ -203,7 +203,7 @@ export default function DashboardPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">
                 Regional Epidemic Intelligence
               </p>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 [font-family:Space_Grotesk,ui-sans-serif,system-ui] sm:text-4xl">
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 font-[Space_Grotesk,ui-sans-serif,system-ui] sm:text-4xl">
                 Command Overview
               </h1>
               <p className="mt-3 max-w-2xl text-sm text-slate-600">
@@ -331,28 +331,32 @@ export default function DashboardPage() {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
                       Top Risk Drivers
                     </p>
-                    {orderedDrivers.map((driver) => (
-                      <div
-                        key={`${driver.factor}-${driver.value}-${driver.weight}`}
-                      >
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-slate-700">
-                            {driver.factor}
-                          </span>
-                          <span className="font-semibold text-slate-900">
-                            {(driver.weight * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200">
-                          <div
-                            className="h-full rounded-full bg-emerald-600"
-                            style={{
-                              width: `${Math.max(4, Math.min(100, driver.weight * 100))}%`,
-                            }}
+                    {orderedDrivers.map((driver) => {
+                      const weightPercent = Math.max(
+                        4,
+                        Math.min(100, driver.weight * 100),
+                      );
+
+                      return (
+                        <div
+                          key={`${driver.factor}-${driver.value}-${driver.weight}`}
+                        >
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-medium text-slate-700">
+                              {driver.factor}
+                            </span>
+                            <span className="font-semibold text-slate-900">
+                              {(driver.weight * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <progress
+                            className="mt-1 h-1.5 w-full overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-slate-200 [&::-webkit-progress-value]:bg-emerald-600 [&::-moz-progress-bar]:bg-emerald-600"
+                            value={weightPercent}
+                            max={100}
                           />
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>

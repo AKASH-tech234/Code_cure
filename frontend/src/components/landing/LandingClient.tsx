@@ -186,10 +186,10 @@ export default function LandingClient() {
             initial={{ opacity: 0, y: 26 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.75, delay: 0.08 }}
-            className="text-5xl font-black leading-[0.9] tracking-tight text-white [font-family:Space_Grotesk,ui-sans-serif,system-ui] sm:text-6xl lg:text-7xl"
+            className="text-5xl font-black leading-[0.9] tracking-tight text-white font-[Space_Grotesk,ui-sans-serif,system-ui] sm:text-6xl lg:text-7xl"
           >
             Advanced
-            <span className="block bg-gradient-to-r from-cyan-300 via-teal-200 to-emerald-200 bg-clip-text text-transparent">
+            <span className="block bg-linear-to-r from-cyan-300 via-teal-200 to-emerald-200 bg-clip-text text-transparent">
               Epidemic Defense
             </span>
             Platform
@@ -214,7 +214,7 @@ export default function LandingClient() {
           >
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-2 rounded-sm bg-gradient-to-r from-cyan-300 to-teal-200 px-6 py-3 text-sm font-bold uppercase tracking-[0.12em] text-slate-900 shadow-[0_0_25px_rgba(56,232,217,0.28)] transition hover:scale-[1.02]"
+              className="inline-flex items-center gap-2 rounded-sm bg-linear-to-r from-cyan-300 to-teal-200 px-6 py-3 text-sm font-bold uppercase tracking-[0.12em] text-slate-900 shadow-[0_0_25px_rgba(56,232,217,0.28)] transition hover:scale-[1.02]"
             >
               Enter Testing Frontend
               <ArrowRight className="h-4 w-4" />
@@ -238,7 +238,7 @@ export default function LandingClient() {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1.0, delay: 0.2 }}
-          className="relative h-[430px] overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-900/40 shadow-[0_0_60px_rgba(20,247,216,0.08)] lg:h-[560px]"
+          className="relative h-107.5 overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-900/40 shadow-[0_0_60px_rgba(20,247,216,0.08)] lg:h-140"
         >
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(45,249,215,0.12),transparent_45%)]" />
           <div className="absolute inset-0">
@@ -249,7 +249,7 @@ export default function LandingClient() {
 
       <section className="mx-auto max-w-7xl px-6 pb-24 lg:px-10">
         <div className="mb-8 flex items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold tracking-tight text-white [font-family:Space_Grotesk,ui-sans-serif,system-ui] sm:text-3xl">
+          <h2 className="text-2xl font-bold tracking-tight text-white font-[Space_Grotesk,ui-sans-serif,system-ui] sm:text-3xl">
             Core Capabilities
           </h2>
           <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate-300">
