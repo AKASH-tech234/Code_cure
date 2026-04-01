@@ -157,6 +157,26 @@ async function postJson<TResponse>(
   return parsed as TResponse;
 }
 
+function normalizeForecastResponse(raw: ForecastResponse): ForecastResponse {
+  const horizon = raw.horizon_days ?? 7;
+  if (Array.isArray(raw.predicted_cases) && raw.predicted_cases.length > 0) {
+    return raw;
+  }
+
+  const point = raw.point_forecast?.predicted_roll7_cases;
+  if (typeof point === "number") {
+    return {
+      ...raw,
+      predicted_cases: Array.from({ length: horizon }, () => Math.round(point)),
+    };
+  }
+
+  return {
+    ...raw,
+    predicted_cases: Array.from({ length: horizon }, () => 0),
+  };
+}
+
 export async function runQuery(body: QueryRequest): Promise<QueryResponse> {
   return postJson<QueryResponse>("/query", body);
 }
@@ -165,10 +185,11 @@ export async function runForecast(
   regionId: string,
   horizonDays = 7,
 ): Promise<ForecastResponse> {
-  return postJson<ForecastResponse>("/forecast", {
+  const response = await postJson<ForecastResponse>("/forecast", {
     region_id: regionId,
     horizon_days: horizonDays,
   });
+  return normalizeForecastResponse(response);
 }
 
 export async function runSimulate(

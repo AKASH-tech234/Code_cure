@@ -1,3 +1,6 @@
+import logging
+import time
+
 from fastapi import APIRouter, HTTPException
 from app.schemas import RiskRequest, RiskResponse, RiskDriver
 from app.data.region_templates import (
@@ -6,6 +9,7 @@ from app.data.region_templates import (
 from app.services import epidemic_runtime
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=RiskResponse)
@@ -17,12 +21,17 @@ def risk(body: RiskRequest):
 
     Returns risk level, score, and individual driver contributions.
     """
+    started_at = time.perf_counter()
     region_id = body.region_id.upper()
+    request_payload = body.model_dump()
+
+    logger.info("[ML-RISK][REQ] region_id=%s", region_id)
+    logger.debug("[ML-RISK][REQ_PAYLOAD] payload=%s", request_payload)
 
     if epidemic_runtime.supports_region(region_id):
         try:
             epi = epidemic_runtime.risk(region_id=region_id)
-            return RiskResponse(
+            response = RiskResponse(
                 region_id=epi.region_id,
                 risk_level=epi.risk_level,
                 risk_score=epi.risk_score,
@@ -31,8 +40,19 @@ def risk(body: RiskRequest):
                     for d in epi.drivers
                 ],
             )
+            latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+            logger.info(
+                "[ML-RISK][RESP] region_id=%s risk_level=%s risk_score=%.3f latency_ms=%.2f",
+                response.region_id,
+                response.risk_level,
+                response.risk_score,
+                latency_ms,
+            )
+            logger.debug("[ML-RISK][RESP_PAYLOAD] payload=%s", response.model_dump())
+            return response
         except Exception:
             # Keep service resilient: runtime failure should not break existing template behavior.
+            logger.exception("[ML-RISK] adapter path failed, using template fallback")
             pass
 
     region = get_region(region_id)
@@ -77,9 +97,19 @@ def risk(body: RiskRequest):
         ),
     ]
 
-    return RiskResponse(
+    response = RiskResponse(
         region_id=region_id,
         risk_level=risk_level,
         risk_score=risk_score,
         drivers=drivers
     )
+    latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    logger.info(
+        "[ML-RISK][RESP_FALLBACK] region_id=%s risk_level=%s risk_score=%.3f latency_ms=%.2f",
+        response.region_id,
+        response.risk_level,
+        response.risk_score,
+        latency_ms,
+    )
+    logger.debug("[ML-RISK][RESP_FALLBACK_PAYLOAD] payload=%s", response.model_dump())
+    return response

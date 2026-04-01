@@ -97,6 +97,11 @@ def _extract_structured_data(tool: str, tool_payloads: dict) -> dict | None:
         if not isinstance(data, dict) or not data:
             return None
         predicted_cases = data.get("predicted_cases") or []
+        if (not predicted_cases) and isinstance(data.get("point_forecast"), dict):
+            point = data["point_forecast"].get("predicted_roll7_cases")
+            if isinstance(point, (int, float)):
+                horizon = data.get("horizon_days") or 7
+                predicted_cases = [int(round(point)) for _ in range(int(horizon))]
         if not isinstance(predicted_cases, list):
             predicted_cases = []
         return {
@@ -108,6 +113,9 @@ def _extract_structured_data(tool: str, tool_payloads: dict) -> dict | None:
             "predicted_cases": predicted_cases,
             "horizon_days": data.get("horizon_days"),
             "as_of_date": data.get("as_of_date"),
+            "point_forecast": data.get("point_forecast"),
+            "prediction_interval_80pct": data.get("prediction_interval_80pct"),
+            "model_metadata": data.get("model_metadata"),
             "chart": _forecast_chart(predicted_cases),
         }
 

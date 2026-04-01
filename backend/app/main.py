@@ -2,9 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
+import os
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO)
+LOG_LEVEL = os.getenv("BACKEND_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 from .routers import forecast, simulate, risk, query
 from .middleware.error_handler import error_handler_middleware

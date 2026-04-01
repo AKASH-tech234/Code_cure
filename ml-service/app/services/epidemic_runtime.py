@@ -48,6 +48,11 @@ class EpiForecastResult:
     risk_level: str
     horizon_days: int
     as_of_date: str
+    prediction_date: str | None = None
+    country: str | None = None
+    point_forecast: dict[str, Any] | None = None
+    prediction_interval_80pct: dict[str, Any] | None = None
+    model_metadata: dict[str, Any] | None = None
 
 
 @dataclass
@@ -178,6 +183,11 @@ class EpidemicRuntime:
             risk_level=result.risk_level,
             horizon_days=result.horizon_days,
             as_of_date=result.as_of_date,
+            prediction_date=result.prediction_date,
+            country=result.country,
+            point_forecast=result.point_forecast,
+            prediction_interval_80pct=result.prediction_interval_80pct,
+            model_metadata=result.model_metadata,
         )
 
     @staticmethod
@@ -202,12 +212,27 @@ class EpidemicRuntime:
             ],
         )
 
-    def forecast(self, region_id: str, horizon_days: int) -> EpiForecastResult:
+    def forecast(
+        self,
+        region_id: str,
+        horizon_days: int,
+        features: dict[str, Any] | None = None,
+        prev_roll7: float | None = None,
+        prediction_date: str | None = None,
+        country: str | None = None,
+    ) -> EpiForecastResult:
         region = region_id.upper()
 
         if self._adapter.supports_region(region):
             try:
-                adapter_result = self._adapter.forecast(region_id=region, horizon_days=horizon_days)
+                adapter_result = self._adapter.forecast(
+                    region_id=region,
+                    horizon_days=horizon_days,
+                    features=features,
+                    prev_roll7=prev_roll7,
+                    prediction_date=prediction_date,
+                    country=country,
+                )
                 return self._from_adapter_forecast(adapter_result)
             except Exception as exc:
                 logger.warning("[EPI_RUNTIME] Adapter forecast failed for %s: %s", region, exc)

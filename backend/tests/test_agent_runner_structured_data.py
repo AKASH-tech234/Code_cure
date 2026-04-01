@@ -32,6 +32,35 @@ class AgentRunnerStructuredDataTests(unittest.TestCase):
         self.assertEqual(data["chart"]["series"][0]["name"], "predicted_cases")
         self.assertEqual(data["chart"]["series"][0]["values"], [100, 110])
 
+    def test_extract_forecast_structured_data_from_model_spec_fields(self):
+        payloads = {
+            "forecast": {
+                "region_id": "USA",
+                "horizon_days": 3,
+                "risk_score": 0.71,
+                "risk_level": "High",
+                "point_forecast": {"predicted_roll7_cases": 123.6},
+                "prediction_interval_80pct": {
+                    "lower_q10": 110.0,
+                    "median_q50": 124.0,
+                    "upper_q90": 141.0,
+                },
+                "model_metadata": {"model_mae": 1394},
+            }
+        }
+
+        data = _extract_structured_data("forecast", payloads)
+
+        self.assertIsNotNone(data)
+        data = cast(Dict[str, Any], data)
+        self.assertEqual(data["kind"], "forecast")
+        self.assertEqual(data["region_id"], "USA")
+        self.assertEqual(data["predicted_cases"], [124, 124, 124])
+        self.assertEqual(data["chart"]["labels"], ["Day 1", "Day 2", "Day 3"])
+        self.assertEqual(data["point_forecast"]["predicted_roll7_cases"], 123.6)
+        self.assertEqual(data["prediction_interval_80pct"]["upper_q90"], 141.0)
+        self.assertEqual(data["model_metadata"]["model_mae"], 1394)
+
     def test_extract_simulate_structured_data(self):
         payloads = {
             "simulate": {

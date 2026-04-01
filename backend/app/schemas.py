@@ -7,6 +7,30 @@ from typing import List, Optional, Dict, Any, Literal
 class ForecastRequest(BaseModel):
     region_id: str = Field(..., min_length=3, max_length=3)
     horizon_days: int = Field(default=7, ge=1, le=30)
+    country: Optional[str] = None
+    prediction_date: Optional[str] = None
+    features: Optional[Dict[str, float]] = None
+    prev_roll7: Optional[float] = Field(default=None, ge=0.0)
+
+
+class PointForecast(BaseModel):
+    predicted_roll7_cases: float
+    description: Optional[str] = None
+
+
+class PredictionInterval80Pct(BaseModel):
+    lower_q10: float
+    median_q50: float
+    upper_q90: float
+    coverage_guarantee: Optional[str] = None
+
+
+class ForecastModelMetadata(BaseModel):
+    target: Optional[str] = None
+    model_type: Optional[str] = None
+    naive_baseline_mae: Optional[float] = None
+    model_mae: Optional[float] = None
+    improvement_over_naive_pct: Optional[float] = None
 
 
 class SimulateInterventionInput(BaseModel):

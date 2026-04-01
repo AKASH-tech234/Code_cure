@@ -1,4 +1,5 @@
 import logging
+import time
 from fastapi import APIRouter
 from ..schemas import QueryRequest, QueryResponse, FollowUp, SlotStatus, VerificationStatus, ExecutionStep
 from ..session import session_manager
@@ -20,9 +21,19 @@ async def query(body: QueryRequest):
     4. Persist updated memory
     5. Return structured response
     """
+    started_at = time.perf_counter()
+    request_payload = body.model_dump(exclude_none=True)
+
     # 1. Get or create session
     session_id, memory = session_manager.get_or_create(body.session_id)
-    logger.info("[QUERY] session=%s, query=%s", session_id, body.query[:50])
+    logger.info(
+        "[QUERY][REQ] session=%s query_len=%d has_region=%s has_intervention=%s",
+        session_id,
+        len(body.query),
+        body.region_id is not None,
+        body.intervention is not None,
+    )
+    logger.debug("[QUERY][REQ_PAYLOAD] payload=%s", request_payload)
 
     # 2. Run agent with memory
     context = {}
@@ -62,7 +73,7 @@ async def query(body: QueryRequest):
         for step in (result.get("execution_steps") or [])
     ]
 
-    return QueryResponse(
+    response = QueryResponse(
         session_id=session_id,
         answer=result.get("answer"),
         intent=result.get("intent"),
@@ -76,3 +87,14 @@ async def query(body: QueryRequest):
         execution_steps=execution_steps,
         fallback_used=bool(result.get("fallback_used", False)),
     )
+    latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    logger.info(
+        "[QUERY][RESP] session=%s intent=%s tool=%s fallback_used=%s latency_ms=%.2f",
+        session_id,
+        response.intent,
+        response.tool,
+        response.fallback_used,
+        latency_ms,
+    )
+    logger.debug("[QUERY][RESP_PAYLOAD] payload=%s", response.model_dump())
+    return response

@@ -36,18 +36,26 @@ type SnapshotEntry = {
 };
 
 function forecastToChart(payload: ForecastResponse): ChartPayload {
+  const points = payload.predicted_cases?.length
+    ? payload.predicted_cases
+    : payload.point_forecast
+      ? Array.from({ length: payload.horizon_days || 7 }, () =>
+          Math.round(payload.point_forecast!.predicted_roll7_cases),
+        )
+      : [];
+
   return {
     chart_type: "line",
     x_axis_label: "Day",
     y_axis_label: "Predicted Cases",
     labels: Array.from(
-      { length: payload.horizon_days },
+      { length: points.length || payload.horizon_days },
       (_, index) => `Day ${index + 1}`,
     ),
     series: [
       {
         name: "predicted_cases",
-        values: payload.predicted_cases,
+        values: points,
       },
     ],
   };
@@ -140,7 +148,10 @@ export default function DashboardPage() {
         risk_score: forecast.risk_score,
         drivers: [],
       });
-      const summary = `Growth rate ${(forecast.growth_rate * 100).toFixed(1)}% with risk ${forecast.risk_level} (${forecast.risk_score.toFixed(2)}).`;
+      const intervalSummary = forecast.prediction_interval_80pct
+        ? ` Interval q10-q90: ${forecast.prediction_interval_80pct.lower_q10.toFixed(0)}-${forecast.prediction_interval_80pct.upper_q90.toFixed(0)}.`
+        : "";
+      const summary = `Growth rate ${(forecast.growth_rate * 100).toFixed(1)}% with risk ${forecast.risk_level} (${forecast.risk_score.toFixed(2)}).${intervalSummary}`;
       setLastSummary(summary);
       pushSnapshot("forecast", forecast.region_id, summary);
     } catch (error) {

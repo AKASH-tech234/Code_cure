@@ -4,6 +4,7 @@ Catches all exceptions and returns structured error envelope.
 """
 
 import logging
+import time
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import httpx
@@ -12,8 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 async def error_handler_middleware(request: Request, call_next):
+    started_at = time.perf_counter()
+    logger.info("[GATEWAY][REQ] method=%s path=%s", request.method, request.url.path)
     try:
         response = await call_next(request)
+        latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        logger.info(
+            "[GATEWAY][RESP] method=%s path=%s status=%s latency_ms=%.2f",
+            request.method,
+            request.url.path,
+            response.status_code,
+            latency_ms,
+        )
         return response
     except httpx.TimeoutException:
         logger.error("[GATEWAY] Downstream service timeout for %s", request.url.path)

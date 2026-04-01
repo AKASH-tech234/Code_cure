@@ -1,7 +1,17 @@
+import logging
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import forecast, simulate, risk
 from app.services import initialize_epidemic_runtime
+
+
+LOG_LEVEL = os.getenv("ML_SERVICE_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 app = FastAPI(
     title="Epidemic ML Service",

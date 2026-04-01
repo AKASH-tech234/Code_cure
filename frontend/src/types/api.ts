@@ -90,6 +90,25 @@ export type ForecastResponse = {
   risk_level: string;
   horizon_days: number;
   as_of_date: string;
+  prediction_date?: string;
+  country?: string;
+  point_forecast?: {
+    predicted_roll7_cases: number;
+    description?: string;
+  };
+  prediction_interval_80pct?: {
+    lower_q10: number;
+    median_q50: number;
+    upper_q90: number;
+    coverage_guarantee?: string;
+  };
+  model_metadata?: {
+    target?: string;
+    model_type?: string;
+    naive_baseline_mae?: number;
+    model_mae?: number;
+    improvement_over_naive_pct?: number;
+  };
 };
 
 export type SimulateResponse = {

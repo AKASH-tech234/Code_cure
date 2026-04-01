@@ -29,6 +29,14 @@ class EpidemicRuntimeIntegrationTests(unittest.TestCase):
         self.assertIsInstance(body["risk_score"], float)
         self.assertIn(body["risk_level"], ["Low", "Medium", "High"])
         self.assertIsInstance(body["as_of_date"], str)
+        self.assertIn("point_forecast", body)
+        self.assertIn("prediction_interval_80pct", body)
+        self.assertIn("model_metadata", body)
+        if body["point_forecast"] is not None:
+            self.assertIn("predicted_roll7_cases", body["point_forecast"])
+        if body["prediction_interval_80pct"] is not None:
+            self.assertIn("lower_q10", body["prediction_interval_80pct"])
+            self.assertIn("upper_q90", body["prediction_interval_80pct"])
 
     def test_simulate_usa_contract_shape(self):
         response = self.client.post(
@@ -89,6 +97,11 @@ class EpidemicRuntimeIntegrationTests(unittest.TestCase):
             risk_level="Medium",
             horizon_days=3,
             as_of_date="2026-04-01",
+            prediction_date="2026-04-02",
+            country="Italy",
+            point_forecast={"predicted_roll7_cases": 101.0},
+            prediction_interval_80pct={"lower_q10": 95.0, "median_q50": 101.0, "upper_q90": 110.0},
+            model_metadata={"model_mae": 1394},
         )
 
         with (
@@ -109,6 +122,43 @@ class EpidemicRuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(body["risk_level"], "Medium")
         self.assertEqual(body["horizon_days"], 3)
         self.assertEqual(body["as_of_date"], "2026-04-01")
+        self.assertEqual(body["prediction_date"], "2026-04-02")
+        self.assertEqual(body["country"], "Italy")
+        self.assertEqual(body["point_forecast"]["predicted_roll7_cases"], 101.0)
+
+    def test_forecast_accepts_model_spec_inputs(self):
+        response = self.client.post(
+            "/forecast",
+            json={
+                "region_id": "USA",
+                "horizon_days": 3,
+                "country": "US",
+                "prediction_date": "2026-04-05",
+                "features": {
+                    "DayOfWeek": 1,
+                    "Month": 4,
+                    "IsWeekend": 0,
+                    "New_Confirmed_Lag1": 42000.0,
+                    "New_Confirmed_Lag3": 41500.0,
+                    "New_Confirmed_Lag7": 39800.0,
+                    "New_Deaths_Lag1": 210.0,
+                    "New_Confirmed_Roll14_Lag1": 40500.0,
+                    "stringency_index": 35.0,
+                    "reproduction_rate": 0.94,
+                },
+                "prev_roll7": 41000.0,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["region_id"], "USA")
+        self.assertEqual(body["horizon_days"], 3)
+        self.assertEqual(len(body["predicted_cases"]), 3)
+        self.assertIn("point_forecast", body)
+        self.assertIn("prediction_interval_80pct", body)
+        if body["point_forecast"] is not None:
+            self.assertIn("predicted_roll7_cases", body["point_forecast"])
 
     def test_forecast_falls_back_when_adapter_errors(self):
         with (
