@@ -39,6 +39,11 @@ def planner_node(state):
     """
     query = state["query"]
     memory = state.get("memory", {})
+    logger.info(
+        "[AGENT_PROVENANCE][PLANNER] stage=start query_len=%s has_memory_region=%s",
+        len(query or ""),
+        bool(memory.get("region_id")),
+    )
 
     prompt = f"""You are a precise AI planner for an epidemic intelligence system.
 
@@ -136,6 +141,7 @@ Rules:
 
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.warning("[PLANNER] Failed to parse LLM output: %s", str(e))
+        logger.warning("[AGENT_PROVENANCE][PLANNER] stage=fallback reason=planner_parse_fallback")
         # Fallback: treat as general_info with rag
         return {
             "intent": "general_info",
@@ -180,6 +186,10 @@ def verifier_node(state):
         followup_question = f"Could you please specify: {', '.join(missing_list)}?"
 
     if missing_list:
+        logger.info(
+            "[AGENT_PROVENANCE][VERIFIER] status=missing_fields missing=%s",
+            ",".join(missing_list),
+        )
         return {
             "missing_fields": missing_list,
             "followup_question": followup_question,
@@ -210,22 +220,31 @@ def tool_node(state):
     context_parts = []
     sources = []
     tool_payloads = {}
+    logger.info(
+        "[AGENT_PROVENANCE][TOOL] stage=start selected_tool=%s region=%s has_intervention=%s",
+        tool,
+        region,
+        bool(intervention),
+    )
 
     try:
         if tool == "forecast":
             result = forecast_tool(region=region)
             tool_payloads["forecast"] = result
             context_parts.append(f"FORECAST DATA:\n{json.dumps(result, indent=2)}")
+            logger.info("[AGENT_PROVENANCE][TOOL] stage=success tool=forecast")
 
         elif tool == "simulate":
             result = simulate_tool(region=region, intervention=intervention)
             tool_payloads["simulate"] = result
             context_parts.append(f"SIMULATION DATA:\n{json.dumps(result, indent=2)}")
+            logger.info("[AGENT_PROVENANCE][TOOL] stage=success tool=simulate")
 
         elif tool == "risk":
             result = risk_tool(region=region)
             tool_payloads["risk"] = result
             context_parts.append(f"RISK ASSESSMENT:\n{json.dumps(result, indent=2)}")
+            logger.info("[AGENT_PROVENANCE][TOOL] stage=success tool=risk")
 
         elif tool == "rag":
             rag_result = rag_tool(query)
@@ -236,8 +255,10 @@ def tool_node(state):
             tool_payloads["rag"] = normalized_rag
             context_parts.append(f"KNOWLEDGE BASE:\n{normalized_rag['context']}")
             sources = normalized_rag["sources"]
+            logger.info("[AGENT_PROVENANCE][TOOL] stage=success tool=rag")
 
         elif tool == "none":
+            logger.info("[AGENT_PROVENANCE][TOOL] stage=skipped reason=tool_none")
             pass
 
         else:
@@ -245,6 +266,11 @@ def tool_node(state):
 
     except Exception as e:
         logger.error("[TOOL] Error executing %s: %s", tool, str(e))
+        logger.error(
+            "[AGENT_PROVENANCE][TOOL] stage=error tool=%s reason=tool_error_fallback detail=%s",
+            tool,
+            str(e),
+        )
         context_parts.append(f"[Tool error: {str(e)}]")
 
     # For forecast/simulate/risk, also try to get RAG context
@@ -259,8 +285,13 @@ def tool_node(state):
                 tool_payloads["rag"] = normalized_rag
                 context_parts.append(f"\nRELEVANT GUIDELINES:\n{normalized_rag['context']}")
                 sources.extend(normalized_rag["sources"])
+                logger.info("[AGENT_PROVENANCE][TOOL] rag_supplemental_status=attached")
         except Exception as e:
             logger.warning("[TOOL] RAG supplemental call failed: %s", str(e))
+            logger.warning(
+                "[AGENT_PROVENANCE][TOOL] rag_supplemental_status=failed reason=%s",
+                str(e),
+            )
 
     return {
         "context": "\n\n".join(context_parts),
@@ -277,6 +308,10 @@ def llm_node(state):
     Produces structured, scientifically grounded explanation.
     """
     payloads = state.get("tool_payloads") or {}
+    logger.info(
+        "[AGENT_PROVENANCE][LLM] stage=start payload_keys=%s",
+        ",".join(sorted(payloads.keys())) if payloads else "none",
+    )
     serialized_payloads = json.dumps(payloads, indent=2) if payloads else "{}"
 
     prompt = f"""You are an epidemic intelligence analyst.

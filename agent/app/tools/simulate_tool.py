@@ -20,13 +20,23 @@ def simulate_tool(region: str, intervention: dict) -> dict:
                 "vaccination_increase": float(intervention.get("vaccination_increase") or 0),
             }
         }
+        logger.info(
+            "[AGENT_TOOL][SIMULATE][REQ] region_id=%s mobility_reduction=%.3f vaccination_increase=%.3f",
+            region,
+            payload["intervention"]["mobility_reduction"],
+            payload["intervention"]["vaccination_increase"],
+        )
+        logger.debug("[AGENT_TOOL][SIMULATE][REQ_PAYLOAD] payload=%s", payload)
         res = requests.post(
             f"{ML_URL}/simulate",
             json=payload,
             timeout=10
         )
         res.raise_for_status()
-        return res.json()
+        parsed = res.json()
+        logger.info("[AGENT_TOOL][SIMULATE][RESP] status=%s", res.status_code)
+        logger.debug("[AGENT_TOOL][SIMULATE][RESP_PAYLOAD] payload=%s", parsed)
+        return parsed
     except Exception as e:
         logger.error("[SIMULATE_TOOL] Error: %s", str(e))
         raise

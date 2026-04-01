@@ -12,7 +12,8 @@ RAG_URL = os.getenv("RAG_URL", "http://localhost:8003")
 
 def rag_tool(query: str, top_k: int = 5) -> dict:
     try:
-        logger.info("[AGENT] calling RAG tool query=%s", query)
+        logger.info("[AGENT_TOOL][RAG][REQ] query_len=%s top_k=%s", len(query or ""), top_k)
+        logger.debug("[AGENT_TOOL][RAG][REQ_PAYLOAD] payload=%s", {"query": query, "top_k": top_k})
 
         response = requests.post(
             f"{RAG_URL}/retrieve",
@@ -23,6 +24,14 @@ def rag_tool(query: str, top_k: int = 5) -> dict:
         response.raise_for_status()
 
         data = response.json()
+
+        logger.info(
+            "[AGENT_TOOL][RAG][RESP] status=%s source_count=%s has_context=%s",
+            response.status_code,
+            len(data.get("sources") or []),
+            bool((data.get("context") or "").strip()),
+        )
+        logger.debug("[AGENT_TOOL][RAG][RESP_PAYLOAD] payload=%s", data)
 
         return {
             "context": data.get("context", ""),

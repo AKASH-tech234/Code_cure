@@ -89,11 +89,13 @@ async def query(body: QueryRequest):
     )
     latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
     logger.info(
-        "[QUERY][RESP] session=%s intent=%s tool=%s fallback_used=%s latency_ms=%.2f",
+        "[QUERY][RESP] session=%s intent=%s tool=%s fallback_used=%s query_path=%s model_source=%s latency_ms=%.2f",
         session_id,
         response.intent,
         response.tool,
         response.fallback_used,
+        result.get("query_path"),
+        result.get("model_source"),
         latency_ms,
     )
     logger.debug("[QUERY][RESP_PAYLOAD] payload=%s", response.model_dump())

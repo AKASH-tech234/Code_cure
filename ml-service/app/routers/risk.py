@@ -42,7 +42,7 @@ def risk(body: RiskRequest):
             )
             latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
             logger.info(
-                "[ML-RISK][RESP] region_id=%s risk_level=%s risk_score=%.3f latency_ms=%.2f",
+                "[ML-RISK][RESP] region_id=%s source=artifact artifact_used=true risk_level=%s risk_score=%.3f latency_ms=%.2f",
                 response.region_id,
                 response.risk_level,
                 response.risk_score,
@@ -105,7 +105,7 @@ def risk(body: RiskRequest):
     )
     latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
     logger.info(
-        "[ML-RISK][RESP_FALLBACK] region_id=%s risk_level=%s risk_score=%.3f latency_ms=%.2f",
+        "[ML-RISK][RESP_FALLBACK] region_id=%s source=template artifact_used=false risk_level=%s risk_score=%.3f latency_ms=%.2f",
         response.region_id,
         response.risk_level,
         response.risk_score,

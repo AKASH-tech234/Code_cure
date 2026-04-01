@@ -132,6 +132,13 @@ class EpidemicRuntime:
             self._adapter.is_ready,
             metadata.get("supported_regions"),
         )
+        logger.info(
+            "[EPI_PROVENANCE][INIT] adapter_ready=%s artifact_ready=%s artifact_dir=%s legacy_ready=%s",
+            self._adapter.is_ready,
+            self._adapter.artifact_ready,
+            self._adapter.artifact_dir,
+            self._ready,
+        )
 
     @property
     def is_ready(self) -> bool:
@@ -222,6 +229,12 @@ class EpidemicRuntime:
         country: str | None = None,
     ) -> EpiForecastResult:
         region = region_id.upper()
+        logger.info(
+            "[EPI_PROVENANCE][FORECAST] stage=runtime_start region_id=%s adapter_supports_region=%s artifact_ready=%s",
+            region,
+            self._adapter.supports_region(region),
+            self._adapter.artifact_ready,
+        )
 
         if self._adapter.supports_region(region):
             try:
@@ -233,9 +246,18 @@ class EpidemicRuntime:
                     prediction_date=prediction_date,
                     country=country,
                 )
+                logger.info(
+                    "[EPI_PROVENANCE][FORECAST] stage=runtime_result region_id=%s source=artifact artifact_used=true",
+                    region,
+                )
                 return self._from_adapter_forecast(adapter_result)
             except Exception as exc:
                 logger.warning("[EPI_RUNTIME] Adapter forecast failed for %s: %s", region, exc)
+                logger.warning(
+                    "[EPI_PROVENANCE][FORECAST] stage=runtime_fallback region_id=%s source=legacy reason=%s",
+                    region,
+                    str(exc),
+                )
 
         if not self._supports_legacy_region(region):
             raise ValueError(f"Region '{region}' not supported by epidemic runtime")
@@ -268,6 +290,12 @@ class EpidemicRuntime:
 
     def simulate(self, region_id: str, mobility_reduction: float, vaccination_increase: float) -> EpiSimulateResult:
         region = region_id.upper()
+        logger.info(
+            "[EPI_PROVENANCE][SIMULATE] stage=runtime_start region_id=%s adapter_supports_region=%s artifact_ready=%s",
+            region,
+            self._adapter.supports_region(region),
+            self._adapter.artifact_ready,
+        )
 
         if self._adapter.supports_region(region):
             try:
@@ -276,9 +304,18 @@ class EpidemicRuntime:
                     mobility_reduction=mobility_reduction,
                     vaccination_increase=vaccination_increase,
                 )
+                logger.info(
+                    "[EPI_PROVENANCE][SIMULATE] stage=runtime_result region_id=%s source=artifact artifact_used=true",
+                    region,
+                )
                 return self._from_adapter_simulate(adapter_result)
             except Exception as exc:
                 logger.warning("[EPI_RUNTIME] Adapter simulate failed for %s: %s", region, exc)
+                logger.warning(
+                    "[EPI_PROVENANCE][SIMULATE] stage=runtime_fallback region_id=%s source=legacy reason=%s",
+                    region,
+                    str(exc),
+                )
 
         if not self._supports_legacy_region(region):
             raise ValueError(f"Region '{region}' not supported by epidemic runtime")
@@ -328,13 +365,28 @@ class EpidemicRuntime:
 
     def risk(self, region_id: str) -> EpiRiskResult:
         region = region_id.upper()
+        logger.info(
+            "[EPI_PROVENANCE][RISK] stage=runtime_start region_id=%s adapter_supports_region=%s artifact_ready=%s",
+            region,
+            self._adapter.supports_region(region),
+            self._adapter.artifact_ready,
+        )
 
         if self._adapter.supports_region(region):
             try:
                 adapter_result = self._adapter.risk(region_id=region)
+                logger.info(
+                    "[EPI_PROVENANCE][RISK] stage=runtime_result region_id=%s source=artifact artifact_used=true",
+                    region,
+                )
                 return self._from_adapter_risk(adapter_result)
             except Exception as exc:
                 logger.warning("[EPI_RUNTIME] Adapter risk failed for %s: %s", region, exc)
+                logger.warning(
+                    "[EPI_PROVENANCE][RISK] stage=runtime_fallback region_id=%s source=legacy reason=%s",
+                    region,
+                    str(exc),
+                )
 
         if not self._supports_legacy_region(region):
             raise ValueError(f"Region '{region}' not supported by epidemic runtime")

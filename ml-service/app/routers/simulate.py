@@ -47,7 +47,7 @@ def simulate(body: SimulateRequest):
             )
             latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
             logger.info(
-                "[ML-SIMULATE][RESP] region_id=%s delta_cases=%s latency_ms=%.2f",
+                "[ML-SIMULATE][RESP] region_id=%s source=artifact artifact_used=true delta_cases=%s latency_ms=%.2f",
                 response.region_id,
                 response.delta_cases,
                 latency_ms,
@@ -113,7 +113,7 @@ def simulate(body: SimulateRequest):
     )
     latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
     logger.info(
-        "[ML-SIMULATE][RESP_FALLBACK] region_id=%s delta_cases=%s latency_ms=%.2f",
+        "[ML-SIMULATE][RESP_FALLBACK] region_id=%s source=template artifact_used=false delta_cases=%s latency_ms=%.2f",
         response.region_id,
         response.delta_cases,
         latency_ms,

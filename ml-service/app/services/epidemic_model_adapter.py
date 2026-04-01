@@ -117,6 +117,10 @@ class EpidemicModelAdapter:
     def artifact_ready(self) -> bool:
         return self._artifact_ready
 
+    @property
+    def artifact_dir(self) -> str:
+        return self._artifact_dir
+
     def initialize(self) -> None:
         metadata = {
             "target": "New_Confirmed_Roll7",
@@ -283,6 +287,11 @@ class EpidemicModelAdapter:
         country: str | None = None,
     ) -> AdapterForecastResult:
         region = region_id.upper()
+        logger.info(
+            "[EPI_PROVENANCE][FORECAST] stage=adapter_start region_id=%s artifact_ready=%s",
+            region,
+            self._artifact_ready,
+        )
         if not self.supports_region(region):
             raise ValueError(f"Region '{region}' not supported by epidemic adapter")
         if not self._artifact_ready:
@@ -314,6 +323,12 @@ class EpidemicModelAdapter:
 
             predicted_cases.append(int(round(point)))
             self._history_store.append_prediction(history, point_day=point_day, predicted_roll7=point)
+
+        logger.info(
+            "[EPI_PROVENANCE][FORECAST] stage=adapter_success region_id=%s artifact_used=true horizon_days=%s",
+            region,
+            horizon_days,
+        )
 
         if horizon_days > 1:
             growth_rate = (predicted_cases[-1] - predicted_cases[0]) / max(predicted_cases[0], 1)
@@ -366,6 +381,11 @@ class EpidemicModelAdapter:
         vaccination_increase: float,
     ) -> AdapterSimulateResult:
         region = region_id.upper()
+        logger.info(
+            "[EPI_PROVENANCE][SIMULATE] stage=adapter_start region_id=%s artifact_ready=%s",
+            region,
+            self._artifact_ready,
+        )
         if not self.supports_region(region):
             raise ValueError(f"Region '{region}' not supported by epidemic adapter")
         if not self._artifact_ready:
@@ -422,6 +442,11 @@ class EpidemicModelAdapter:
 
     def risk(self, region_id: str) -> AdapterRiskResult:
         region = region_id.upper()
+        logger.info(
+            "[EPI_PROVENANCE][RISK] stage=adapter_start region_id=%s artifact_ready=%s",
+            region,
+            self._artifact_ready,
+        )
         if not self.supports_region(region):
             raise ValueError(f"Region '{region}' not supported by epidemic adapter")
         if not self._artifact_ready:

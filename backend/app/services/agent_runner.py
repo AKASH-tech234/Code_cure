@@ -32,6 +32,33 @@ INTENT_REQUIRED_FIELDS: dict[str, list[str]] = {
 }
 
 
+def _infer_query_path(selected_tool: str, payloads: dict[str, Any], fallback_used: bool) -> str:
+    has_ml_tool = any(name in payloads for name in ("forecast", "simulate", "risk"))
+    has_rag = "rag" in payloads
+
+    if selected_tool == "none" and not payloads:
+        return "llm_only"
+    if has_ml_tool and has_rag:
+        return "mixed"
+    if has_ml_tool:
+        return "ml_tool"
+    if has_rag:
+        return "rag_only"
+    if fallback_used:
+        return "fallback_only"
+    return "unknown"
+
+
+def _extract_model_source(tool_payloads: dict[str, Any]) -> str:
+    forecast_payload = tool_payloads.get("forecast")
+    if not isinstance(forecast_payload, dict):
+        return "n/a"
+    metadata = forecast_payload.get("model_metadata")
+    if isinstance(metadata, dict) and metadata:
+        return "artifact"
+    return "template-or-legacy"
+
+
 def _day_labels(values: list) -> list[str]:
     return [f"Day {index + 1}" for index in range(len(values))]
 
@@ -324,6 +351,7 @@ def run_agent(query: str, memory: dict, context: dict[str, Any] | None = None) -
             selected_tool,
             result.get("tool_payloads") or {},
         )
+        tool_payloads = result.get("tool_payloads") or {}
 
         slot_status = _build_slot_status(
             intent=intent,
@@ -352,6 +380,17 @@ def run_agent(query: str, memory: dict, context: dict[str, Any] | None = None) -
             (result.get("reasoning") or "").lower().startswith("could not parse planner output")
             or "[Tool error:" in (result.get("context") or "")
         )
+        query_path = _infer_query_path(selected_tool=selected_tool, payloads=tool_payloads, fallback_used=fallback_used)
+        model_source = _extract_model_source(tool_payloads)
+        logger.info(
+            "[QUERY_PROVENANCE] intent=%s selected_tool=%s query_path=%s fallback_used=%s model_source=%s",
+            intent,
+            selected_tool,
+            query_path,
+            fallback_used,
+            model_source,
+        )
+        logger.debug("[QUERY_PROVENANCE][TOOL_PAYLOADS] payload=%s", tool_payloads)
 
         # Build memory updates
         memory_updates = {
@@ -376,6 +415,8 @@ def run_agent(query: str, memory: dict, context: dict[str, Any] | None = None) -
             "verification": verification,
             "execution_steps": execution_steps,
             "fallback_used": fallback_used,
+            "query_path": query_path,
+            "model_source": model_source,
             "memory_updates": memory_updates,
         }
 
@@ -402,6 +443,8 @@ def run_agent(query: str, memory: dict, context: dict[str, Any] | None = None) -
             "verification": _build_verification(slot_status=slot_status, error=error_message),
             "execution_steps": _build_execution_steps(tool="", missing_fields=[], error=error_message),
             "fallback_used": False,
+            "query_path": "error",
+            "model_source": "n/a",
             "memory_updates": {"query": query},
             "error": error_message,
         }
