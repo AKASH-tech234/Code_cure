@@ -3,6 +3,7 @@ from app.schemas import ForecastRequest, ForecastResponse
 from app.data.region_templates import (
     get_region, compute_risk_score, risk_level_from_score, get_as_of_date
 )
+from app.services import epidemic_runtime
 
 router = APIRouter()
 
@@ -15,7 +16,25 @@ def forecast(body: ForecastRequest):
     Uses region template data to generate a plausible forecast curve
     based on base_cases * (1 + growth_rate)^day compounding.
     """
-    region = get_region(body.region_id)
+    region_id = body.region_id.upper()
+
+    if epidemic_runtime.supports_region(region_id):
+        try:
+            epi = epidemic_runtime.forecast(region_id=region_id, horizon_days=body.horizon_days)
+            return ForecastResponse(
+                region_id=epi.region_id,
+                predicted_cases=epi.predicted_cases,
+                growth_rate=epi.growth_rate,
+                risk_score=epi.risk_score,
+                risk_level=epi.risk_level,
+                horizon_days=epi.horizon_days,
+                as_of_date=epi.as_of_date,
+            )
+        except Exception:
+            # Keep service resilient: runtime failure should not break existing template behavior.
+            pass
+
+    region = get_region(region_id)
     if not region:
         raise HTTPException(
             status_code=404,
@@ -42,7 +61,7 @@ def forecast(body: ForecastRequest):
     )
 
     return ForecastResponse(
-        region_id=body.region_id.upper(),
+        region_id=region_id,
         predicted_cases=predicted_cases,
         growth_rate=round(growth, 4),
         risk_score=risk_score,

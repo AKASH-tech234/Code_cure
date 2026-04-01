@@ -3,6 +3,7 @@ from app.schemas import RiskRequest, RiskResponse, RiskDriver
 from app.data.region_templates import (
     get_region, compute_risk_score, risk_level_from_score, RISK_WEIGHTS
 )
+from app.services import epidemic_runtime
 
 router = APIRouter()
 
@@ -16,7 +17,25 @@ def risk(body: RiskRequest):
 
     Returns risk level, score, and individual driver contributions.
     """
-    region = get_region(body.region_id)
+    region_id = body.region_id.upper()
+
+    if epidemic_runtime.supports_region(region_id):
+        try:
+            epi = epidemic_runtime.risk(region_id=region_id)
+            return RiskResponse(
+                region_id=epi.region_id,
+                risk_level=epi.risk_level,
+                risk_score=epi.risk_score,
+                drivers=[
+                    RiskDriver(factor=d.factor, value=d.value, weight=d.weight)
+                    for d in epi.drivers
+                ],
+            )
+        except Exception:
+            # Keep service resilient: runtime failure should not break existing template behavior.
+            pass
+
+    region = get_region(region_id)
     if not region:
         raise HTTPException(
             status_code=404,
@@ -59,7 +78,7 @@ def risk(body: RiskRequest):
     ]
 
     return RiskResponse(
-        region_id=body.region_id.upper(),
+        region_id=region_id,
         risk_level=risk_level,
         risk_score=risk_score,
         drivers=drivers

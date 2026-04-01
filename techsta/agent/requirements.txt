@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-langgraph
-langchain-openai
-requests
-python-dotenv
-google.generativeai

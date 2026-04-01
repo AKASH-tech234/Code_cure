@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import forecast, simulate, risk
+from app.services import initialize_epidemic_runtime
 
 app = FastAPI(
     title="Epidemic ML Service",
@@ -19,6 +20,11 @@ app.add_middleware(
 app.include_router(forecast.router, prefix="/forecast", tags=["Forecast"])
 app.include_router(simulate.router, prefix="/simulate", tags=["Simulate"])
 app.include_router(risk.router, prefix="/risk", tags=["Risk"])
+
+
+@app.on_event("startup")
+def startup_event() -> None:
+    initialize_epidemic_runtime()
 
 
 @app.get("/health")

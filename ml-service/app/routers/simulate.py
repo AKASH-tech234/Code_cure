@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas import SimulateRequest, SimulateResponse
 from app.data.region_templates import get_region
+from app.services import epidemic_runtime
 
 router = APIRouter()
 
@@ -14,7 +15,27 @@ def simulate(body: SimulateRequest):
     - mobility_reduction: each 0.1 reduces daily growth by ~15%
     - vaccination_increase: each 0.1 reduces daily growth by ~10%
     """
-    region = get_region(body.region_id)
+    region_id = body.region_id.upper()
+
+    if epidemic_runtime.supports_region(region_id):
+        try:
+            epi = epidemic_runtime.simulate(
+                region_id=region_id,
+                mobility_reduction=body.intervention.mobility_reduction,
+                vaccination_increase=body.intervention.vaccination_increase,
+            )
+            return SimulateResponse(
+                region_id=epi.region_id,
+                baseline_cases=epi.baseline_cases,
+                simulated_cases=epi.simulated_cases,
+                delta_cases=epi.delta_cases,
+                impact_summary=epi.impact_summary,
+            )
+        except Exception:
+            # Keep service resilient: runtime failure should not break existing template behavior.
+            pass
+
+    region = get_region(region_id)
     if not region:
         raise HTTPException(
             status_code=404,
@@ -60,7 +81,7 @@ def simulate(body: SimulateRequest):
     )
 
     return SimulateResponse(
-        region_id=body.region_id.upper(),
+        region_id=region_id,
         baseline_cases=baseline_cases,
         simulated_cases=simulated_cases,
         delta_cases=max(delta, 0),
